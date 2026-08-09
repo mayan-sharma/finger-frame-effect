@@ -1,0 +1,14 @@
+{
+  "armed_on_start": true,
+  "arm_toggle": { "gesture": "Open_Palm", "hold_ms": 1200 },
+  "bindings": [
+    { "gesture": "Snap", "action": "warp_claude", "params": { "cwd": "D:/projects" }, "cooldown_ms": 4000 },
+    { "gesture": "Closed_Fist", "hold_ms": 600, "action": "warp_esc", "cooldown_ms": 2500 },
+    { "gesture": "Thumb_Up", "hold_ms": 350, "action": "volume_up", "repeat_ms": 150 },
+    { "gesture": "Thumb_Down", "hold_ms": 350, "action": "volume_down", "repeat_ms": 150 },
+    { "gesture": "ILoveYou", "hold_ms": 500, "action": "play_pause", "cooldown_ms": 1500 },
+    { "gesture": "Victory", "hold_ms": 800, "action": "screenshot", "cooldown_ms": 4000 },
+    { "gesture": "Swipe_Left", "action": "next_track", "cooldown_ms": 1500 },
+    { "gesture": "Swipe_Right", "action": "prev_track", "cooldown_ms": 1500 }
+  ]
+}
