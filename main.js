@@ -34,6 +34,10 @@ const PIPS = [6, 10, 14, 18];
 //   * Ignore the first moments after a hand appears: raising it into frame is
 //     itself fast motion. 150ms was measured too short; 250ms swallows it.
 const SWIPE_DIST = 0.13;         // normalized screen widths
+// Vertical travel is smaller in normalized units: the frame is 4:3, so the
+// same physical motion covers less normalized distance across y than x — and
+// arms swing sideways more freely than up and down.
+const SWIPE_DIST_Y = 0.10;
 const SWIPE_WINDOW_MS = 600;
 const SWIPE_MIN_FINGERS = 3;     // an open-ish hand; a fist must not swipe
 const SWIPE_DOMINANCE = 1.5;     // horizontal must beat vertical by this
@@ -424,9 +428,11 @@ async function ensureAnime() {
   }
 }
 
-function cycleAnimeStyle() {
-  animeStyle = (animeStyle + 1) % ANIME_STYLES.length;
+function cycleAnimeStyle(step = 1) {
+  const n = ANIME_STYLES.length;
+  animeStyle = (animeStyle + step + n) % n;
   animeState = "idle";
+  refreshChips();
   ensureAnime();
 }
 
@@ -639,15 +645,25 @@ function detectSwipe(handsLandmarks, t) {
 
   const dx = swipeTravel(h.map((p) => p.x), x);
   const dy = swipeTravel(h.map((p) => p.y), y);
-  if (Math.abs(dx) < SWIPE_DIST) return null;
-  if (Math.abs(dx) < Math.abs(dy) * SWIPE_DOMINANCE) return null;
+
+  // One axis must clearly dominate, or a sloppy diagonal wave clears both
+  // thresholds and fires whichever happens to be tested first.
+  const horizontal = Math.abs(dx) >= SWIPE_DIST &&
+    Math.abs(dx) >= Math.abs(dy) * SWIPE_DOMINANCE;
+  const vertical = Math.abs(dy) >= SWIPE_DIST_Y &&
+    Math.abs(dy) >= Math.abs(dx) * SWIPE_DOMINANCE;
+  if (!horizontal && !vertical) return null;
   if (t - swipeState.lastFire < SWIPE_COOLDOWN_MS) return null;
 
   swipeState.lastFire = t;
   h.length = 0;
-  // Landmarks are in unmirrored video space while the canvas is mirrored, so
-  // a hand moving to the user's right decreases x here.
-  return dx > 0 ? "left" : "right";
+  if (horizontal) {
+    // Landmarks are in unmirrored video space while the canvas is mirrored,
+    // so a hand moving to the user's right decreases x here.
+    return dx > 0 ? "left" : "right";
+  }
+  // Image y grows downward, so +dy means the hand moved down.
+  return dy > 0 ? "down" : "up";
 }
 
 function computeQuad(handsLandmarks) {
@@ -1369,9 +1385,27 @@ function tick(t) {
       const res = landmarker.detectForVideo(video, t);
       raw = computeQuad(res.landmarks);
       const swipe = detectSwipe(res.landmarks, t);
-      if (swipe) {
+      if (swipe === "right" || swipe === "left") {
         setEffect(effectIndex + (swipe === "right" ? 1 : -1));
         flashStatus(`${swipe === "right" ? "▶" : "◀"} ${EFFECTS[effectIndex]}`);
+      } else if (swipe) {
+        // Vertical slides walk the current effect's sub-option, so the two
+        // axes read as "which effect" and "which variant of it".
+        const name = EFFECTS[effectIndex];
+        if (name === "Anime") {
+          cycleAnimeStyle(swipe === "up" ? 1 : -1);
+        } else if (name === "Portal") {
+          portalScene = (portalScene + (swipe === "up" ? 1 : -1) +
+            PORTAL_SCENES.length) % PORTAL_SCENES.length;
+          refreshChips();
+          flashStatus(`Portal → ${PORTAL_SCENES[portalScene]}`);
+        } else if (name === "Matrix") {
+          keepPerson = !keepPerson;
+          flashStatus(keepPerson ? "Matrix rain behind you" : "Matrix rain in front");
+          if (keepPerson) ensureSegmenter();
+        } else {
+          flashStatus(`${EFFECTS[effectIndex]} has no variants`);
+        }
       }
       // Only segment when an effect actually needs the person mask.
       const fxName = EFFECTS[effectIndex];
