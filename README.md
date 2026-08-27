@@ -43,6 +43,14 @@ combine with `?demo`.
 Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
 Matrix rain falls in front of you or behind.
 
+**Swipe to change effect**: with one open hand up, sweep sideways — right for
+the next effect, left for the previous. It gates on an open hand (three or
+more fingers extended, measured from the landmarks rather than a model label,
+since a swiping hand is motion blurred), ignores the first 250 ms after a
+hand appears so raising it into frame doesn't count, requires horizontal
+travel to clearly beat vertical, and only fires once per 700 ms. Two hands up
+is the framing pose, so swipes are one-handed only.
+
 ### The three heavier effects
 
 **Anime** restyles the framed region with AnimeGANv2 (Hayao/Ghibli): ink
