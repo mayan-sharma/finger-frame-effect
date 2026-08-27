@@ -46,7 +46,9 @@ def lock():
     return "locked"
 
 
-def open_uri(uri):
+def open_uri(uri, background=False):
+    # os.startfile has no background mode; the parameter is accepted so
+    # callers stay platform-neutral.
     os.startfile(uri)
 
 

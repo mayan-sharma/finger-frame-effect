@@ -64,7 +64,9 @@ def lock():
     return "loginctl not available"
 
 
-def open_uri(uri):
+def open_uri(uri, background=False):
+    # xdg-open has no background flag; the parameter is accepted so callers
+    # stay platform-neutral.
     subprocess.run(["xdg-open", uri], check=True, timeout=10)
 
 

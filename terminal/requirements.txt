@@ -1,3 +1,9 @@
 mediapipe>=0.10
 opencv-python>=4.9,<5
 numpy
+# The "anime" frame effect only. On Apple silicon this picks up the CoreML
+# execution provider automatically; elsewhere it runs on CPU.
+onnxruntime>=1.17
+# macOS only: push-to-talk needs CGEvent key injection. AppleScript keystrokes
+# are invisible to global hotkey listeners like Wispr Flow.
+pyobjc-framework-Quartz; sys_platform == "darwin"
