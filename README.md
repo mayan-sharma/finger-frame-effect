@@ -22,8 +22,8 @@ http://localhost:8123/?demo
 ```
 
 Optional URL params: `?fx=N` starts on effect N (1–10), `?scene=N` picks the
-Portal scene (0–2), `?keepPerson` puts the Matrix rain behind you. They
-combine with `?demo`.
+Portal scene (0–2), `?style=N` the Anime style (0–3), `?keepPerson` puts the
+Matrix rain behind you. They combine with `?demo`.
 
 ## Controls
 
@@ -36,7 +36,7 @@ combine with `?demo`.
 | 5 | Glitch |
 | 6 | Toon |
 | 7 | Van Gogh |
-| 8 | Anime |
+| 8 | Anime — press again to cycle styles (Hayao / Shinkai / Ghibli / Sketch) |
 | 9 | Matrix |
 | 0 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
 
@@ -53,13 +53,23 @@ is the framing pose, so swipes are one-handed only.
 
 ### The three heavier effects
 
-**Anime** restyles the framed region with AnimeGANv2 (Hayao/Ghibli): ink
-outlines, cel-shaded colour. It lazily loads onnxruntime-web plus an 8.6 MB
-ONNX model on first use and runs on **WebGPU** where available, falling back
-to wasm at reduced resolution. Inference never blocks the render loop — the
-frame keeps tracking at full speed while stylized frames stream in, and the
-working resolution adapts to measured inference time. Toon stands in until
-the first result lands.
+**Anime** restyles the framed region with the AnimeGAN family. Press `8`
+again to cycle four styles:
+
+| Style | Look | Size |
+| ----- | ---- | ---- |
+| Hayao | Warm Ghibli cel-shading, soft ink outlines | 8.6 MB |
+| Shinkai | Saturated teal-blue skies, high contrast (*Your Name*) | 8.6 MB |
+| Ghibli | Softer painterly v3 model, faster than the v2 pair | 7.0 MB |
+| Sketch | Grey pencil-sketch portrait | 4.2 MB |
+
+Each style downloads on first use and is then cached, so switching back is
+instant. They share one tensor spec (NHWC, `[-1,1]`, dynamic H/W) but *not*
+their input tensor names, so the feed is keyed off the session's own
+`inputNames`. Inference runs on **WebGPU** where available, falling back to
+wasm at reduced resolution, and never blocks the render loop — tracking keeps
+full speed while stylized frames stream in, and the working resolution adapts
+to measured inference time. Toon stands in until the first result lands.
 
 **Matrix** fills the frame with digital rain, in front of you by default.
 Press `k` and selfie segmentation cuts you out so the rain falls behind you

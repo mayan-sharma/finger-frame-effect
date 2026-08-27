@@ -79,12 +79,22 @@ async function pickCdn(probePath) {
   return cdnBase;
 }
 
-// --- Anime: AnimeGANv2 (Hayao) via onnxruntime-web -------------------------
-// NHWC float32 in [-1, 1], dynamic H/W. GitHub release assets send no CORS
-// headers; Hugging Face `resolve/` URLs do.
+// --- Anime: the AnimeGAN family via onnxruntime-web -------------------------
+// Every style here shares one spec: NHWC float32 [1,H,W,3] in [-1,1], dynamic
+// H/W, one input and one output — so switching style is only a model swap.
+// Their *input tensor names* differ, so the feed is keyed off the session's
+// own inputNames rather than a constant.
+//
+// Hugging Face `resolve/` URLs send `access-control-allow-origin: *`; GitHub
+// release assets send no CORS headers at all and cannot be used here.
 const ORT_PATH = "onnxruntime-web@1.19.2/dist/";
-const ANIME_MODEL_URL =
-  "https://huggingface.co/vumichien/AnimeGANv2_Hayao/resolve/main/AnimeGANv2_Hayao.onnx";
+const HF = "https://huggingface.co/";
+const ANIME_STYLES = [
+  { name: "Hayao",  url: HF + "vumichien/AnimeGANv2_Hayao/resolve/main/AnimeGANv2_Hayao.onnx" },
+  { name: "Shinkai", url: HF + "vumichien/AnimeGANv2_Shinkai/resolve/main/AnimeGANv2_Shinkai.onnx" },
+  { name: "Ghibli",  url: HF + "trysem/AnimeGANv3_Portrait_Inference/resolve/main/AnimeGANv3_large_Ghibli_c1_e299.onnx" },
+  { name: "Sketch",  url: HF + "vumichien/AnimeGANv3_PortraitSketch/resolve/main/AnimeGANv3_PortraitSketch.onnx" },
+];
 // Working widths, stepped by measured inference time. The browser has a real
 // GPU, so these are far above what the terminal build could afford.
 const ANIME_SIZES = [256, 384, 512];
@@ -155,6 +165,9 @@ let animeState = "idle";        // idle | loading | ready | error
 let animeBusy = false;
 let animeResult = null;
 let animeTier = 1;
+let animeStyle = 0;             // index into ANIME_STYLES
+let animeLoadToken = 0;         // guards against out-of-order style loads
+const animeCache = new Map();   // style name -> session, so switching is instant
 
 // Person segmentation (Portal, and Matrix when keepPerson is on).
 let visionLib = null;
@@ -202,11 +215,26 @@ function buildHint() {
     const el = document.createElement("div");
     el.className = "fx" + (i === effectIndex ? " active" : "");
     // The tenth chip is reached with 0, not "10".
-    el.innerHTML = `<span class="k">${(i + 1) % 10}</span>${name}`;
+    el.innerHTML = `<span class="k">${(i + 1) % 10}</span><span class="n">${name}</span>`;
     el.addEventListener("click", () => setEffect(i));
     hintEl.appendChild(el);
   });
+  refreshChips();
 }
+// Anime and Portal cycle a sub-option on repeat presses; show which one is
+// live so the extra press is discoverable rather than hidden.
+function refreshChips() {
+  [...hintEl.children].forEach((el, j) => {
+    const label = el.querySelector(".n");
+    if (!label) return;
+    if (EFFECTS[j] === "Anime") {
+      label.textContent = `Anime · ${ANIME_STYLES[animeStyle].name}`;
+    } else if (EFFECTS[j] === "Portal") {
+      label.textContent = `Portal · ${PORTAL_SCENES[portalScene]}`;
+    }
+  });
+}
+
 function setEffect(i) {
   const idx = (i + EFFECTS.length) % EFFECTS.length;
   // Pressing the active Portal key again cycles its scene, so all three
@@ -215,8 +243,13 @@ function setEffect(i) {
     portalScene = (portalScene + 1) % PORTAL_SCENES.length;
     flashStatus(`Portal → ${PORTAL_SCENES[portalScene]}`);
   }
+  // Same for Anime: pressing its key again walks through the styles.
+  if (idx === effectIndex && EFFECTS[idx] === "Anime") {
+    cycleAnimeStyle();
+  }
   effectIndex = idx;
   [...hintEl.children].forEach((el, j) => el.classList.toggle("active", j === effectIndex));
+  refreshChips();
   const name = EFFECTS[idx];
   if (name === "Anime") ensureAnime();
   if (name === "Portal" || (name === "Matrix" && keepPerson)) ensureSegmenter();
@@ -338,33 +371,63 @@ function writeMask(result) {
 
 // --- Anime -----------------------------------------------------------------
 
+async function loadOrt() {
+  if (ort) return ort;
+  setStatus("Loading Anime engine…");
+  const base = (await pickCdn(ORT_PATH + "ort.webgpu.min.mjs")) + ORT_PATH;
+  ort = await import(base + "ort.webgpu.min.mjs");
+  ort.env.wasm.wasmPaths = base;
+  return ort;
+}
+
 async function ensureAnime() {
-  if (animeState !== "idle") return;
+  if (animeState === "loading") return;
+  const style = ANIME_STYLES[animeStyle];
+  // Already have this style compiled: switching back is instant.
+  const cached = animeCache.get(style.name);
+  if (cached) {
+    animeSession = cached;
+    animeState = "ready";
+    return;
+  }
+
+  const token = ++animeLoadToken;
   animeState = "loading";
   try {
-    setStatus("Loading Anime engine…");
-    const base = (await pickCdn(ORT_PATH + "ort.webgpu.min.mjs")) + ORT_PATH;
-    ort = await import(base + "ort.webgpu.min.mjs");
-    ort.env.wasm.wasmPaths = base;
-    setStatus("Loading Anime model (8 MB)…");
+    await loadOrt();
+    setStatus(`Loading Anime · ${style.name}…`);
+    let session;
     try {
-      animeSession = await ort.InferenceSession.create(ANIME_MODEL_URL, {
+      session = await ort.InferenceSession.create(style.url, {
         executionProviders: ["webgpu"],
       });
     } catch (err) {
       console.warn("WebGPU unavailable for Anime, using wasm:", err);
       animeTier = 0;                 // wasm is much slower — start small
-      animeSession = await ort.InferenceSession.create(ANIME_MODEL_URL, {
+      session = await ort.InferenceSession.create(style.url, {
         executionProviders: ["wasm"],
       });
     }
+    // A newer style was requested while this one was downloading; that load
+    // owns the session now, so keep this one only for the cache.
+    animeCache.set(style.name, session);
+    if (token !== animeLoadToken) return;
+    animeSession = session;
+    animeResult = null;              // drop the previous style's last frame
     animeState = "ready";
-    flashStatus("Anime ready ✨");
+    flashStatus(`Anime · ${style.name} ✨`);
   } catch (err) {
     console.warn("Anime effect unavailable:", err);
+    if (token !== animeLoadToken) return;
     animeState = "error";
     flashStatus("Anime model failed to load — using Toon");
   }
+}
+
+function cycleAnimeStyle() {
+  animeStyle = (animeStyle + 1) % ANIME_STYLES.length;
+  animeState = "idle";
+  ensureAnime();
 }
 
 async function runAnime(bx, by, bw, bh) {
@@ -387,14 +450,19 @@ async function runAnime(bx, by, bw, bh) {
       data[i++] = src[p + 2] / 127.5 - 1;
     }
 
+    // Capture the session: a style switch mid-inference must not write this
+    // result over the new style's output.
+    const session = animeSession;
     const t0 = performance.now();
     const feeds = {};
-    feeds[animeSession.inputNames[0]] =
+    // Input names differ across the AnimeGAN family, so read it off the model.
+    feeds[session.inputNames[0]] =
       new ort.Tensor("float32", data, [1, th, tw, 3]);
-    const out = await animeSession.run(feeds);
+    const out = await session.run(feeds);
     const dur = performance.now() - t0;
+    if (session !== animeSession) return;
 
-    const tensor = out[animeSession.outputNames[0]];
+    const tensor = out[session.outputNames[0]];
     const [, oh, ow] = tensor.dims;
     const o = tensor.data;
     if (!animeResult) animeResult = document.createElement("canvas");
@@ -426,11 +494,14 @@ async function runAnime(bx, by, bw, bh) {
   }
 }
 
-// ?fx=8 selects a starting effect (1-based), ?scene=2 a portal scene (0-based).
+// ?fx=8 selects a starting effect (1-based), ?scene=2 a portal scene, and
+// ?style=1 an anime style (both 0-based).
 {
   const fx = parseInt(urlParams.get("fx"), 10);
   const sc = parseInt(urlParams.get("scene"), 10);
+  const st = parseInt(urlParams.get("style"), 10);
   if (sc >= 0 && sc < PORTAL_SCENES.length) portalScene = sc;
+  if (st >= 0 && st < ANIME_STYLES.length) animeStyle = st;
   if (urlParams.has("keepPerson")) keepPerson = true;
   if (fx >= 1 && fx <= EFFECTS.length) setEffect(fx - 1);
 }
