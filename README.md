@@ -11,7 +11,6 @@ Inspired by [sophiamyang/finger-frame-effect](https://github.com/sophiamyang/fin
 No build step. The camera requires localhost or HTTPS:
 
 ```
-cd finger-frame
 python -m http.server 8123
 # open http://localhost:8123
 ```
@@ -21,6 +20,10 @@ No camera handy? Use the synthetic demo scene:
 ```
 http://localhost:8123/?demo
 ```
+
+Optional URL params: `?fx=N` starts on effect N (1–10), `?scene=N` picks the
+Portal scene (0–2), `?keepPerson` puts the Matrix rain behind you. They
+combine with `?demo`.
 
 ## Controls
 
@@ -33,13 +36,34 @@ http://localhost:8123/?demo
 | 5 | Glitch |
 | 6 | Toon |
 | 7 | Van Gogh |
+| 8 | Anime |
+| 9 | Matrix |
+| 0 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
 
-Arrow keys or clicking the canvas cycle effects.
+Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
+Matrix rain falls in front of you or behind.
+
+### The three heavier effects
+
+**Anime** restyles the framed region with AnimeGANv2 (Hayao/Ghibli): ink
+outlines, cel-shaded colour. It lazily loads onnxruntime-web plus an 8.6 MB
+ONNX model on first use and runs on **WebGPU** where available, falling back
+to wasm at reduced resolution. Inference never blocks the render loop — the
+frame keeps tracking at full speed while stylized frames stream in, and the
+working resolution adapts to measured inference time. Toon stands in until
+the first result lands.
+
+**Matrix** fills the frame with digital rain, in front of you by default.
+Press `k` and selfie segmentation cuts you out so the rain falls behind you
+instead.
+
+**Portal** keeps you real and replaces the world behind you with an animated
+scene. Both it and `k`-mode need the camera, so demo mode shows scenes only.
 
 ## How it works
 
-- **MediaPipe Hand Landmarker** (loaded from CDN, GPU delegate) tracks up to
-  two hands per video frame.
+- **MediaPipe Hand Landmarker** (GPU delegate) tracks up to two hands per
+  video frame.
 - When both hands pass a thumb–index spread check (with hysteresis), the four
   fingertips are ordered into a quad: `[left.index, right.index, right.thumb,
   left.thumb]`, gated on polygon area and bowtie rejection.
@@ -49,58 +73,6 @@ Arrow keys or clicking the canvas cycle effects.
 - The selected effect renders inside the quad via canvas `clip()`, with a
   smooth presence fade and pop-in.
 
-Needs an internet connection for the MediaPipe WASM + model (demo mode works
-offline once cached).
-
----
-
-# Terminal edition — gesture control for your computer
-
-`terminal/` is the native sibling: the webcam feed renders **inside your
-terminal** as ANSI half-block video, and gestures control the machine —
-no browser sandbox. Cross-platform: Windows, macOS, Linux (not WSL — WSL has
-no webcam access; run it natively per OS).
-
-## Setup
-
-```
-cd terminal
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt     # Windows
-# .venv/bin/pip install -r requirements.txt       # macOS / Linux
-.venv\Scripts\python app.py
-```
-
-The gesture model (~8 MB) downloads automatically on first run.
-
-Flags: `--headless` (status line only), `--camera N`, `--selftest N`
-(pipeline smoke test, works without a camera, actions are logged not fired).
-
-## Default gestures (edit `terminal/config.json`)
-
-| Gesture | Action |
-| ------- | ------ |
-| 🫰 Snap (thumb+middle release) | Open a new Claude instance in Warp |
-| ✊ Fist, hold 0.6s | Focus Warp, send Esc (interrupts Claude) |
-| ✋ Open palm, hold 1.2s | Arm / disarm all gestures |
-| 👍 / 👎 hold | Volume up / down (repeats while held) |
-| 🤟 hold | Play / pause |
-| ✌️ hold 0.8s | Screenshot |
-| ✋ swipe left / right | Next / previous track |
-
-Safety rails: hold-times before firing, per-gesture cooldowns, drift reset
-(a moving hand doesn't count as a hold), and the palm toggle for a global
-kill-switch (`SAFE` mode). Actions available for bindings: `warp_claude`,
-`warp_esc`, `warp_window`, `volume_up/down`, `mute`, `play_pause`,
-`next_track`, `prev_track`, `screenshot`, `lock`, `key`, `open`, `run`.
-
-## Platform notes
-
-- **Windows**: works out of the box (ctypes/user32, no extra deps).
-- **macOS**: keystrokes need Accessibility permission for your terminal
-  (System Settings → Privacy & Security → Accessibility).
-- **Linux**: install `xdotool` (keys/focus), `playerctl` (media),
-  `pactl` (volume); X11 assumed — on Wayland adapt to `ydotool`.
-- The snap→Claude binding writes a Warp launch configuration
-  (`claude.yaml`) into Warp's config dir on first use, then opens
-  `warp://launch/claude`.
+Modules load from jsDelivr with an automatic fallback to unpkg, since
+jsDelivr is blocked or TLS-untrusted on some networks. Needs an internet
+connection for the WASM + models (demo mode works offline once cached).

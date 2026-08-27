@@ -23,7 +23,8 @@
 
   #hint {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 6px; padding: 6px;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px;
+    max-width: calc(100vw - 24px);
     background: rgba(10, 12, 16, 0.65); backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
     user-select: none;

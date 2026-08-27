@@ -1,6 +1,2 @@
-__pycache__/
-*.pyc
-terminal/.venv/
-terminal/models/*.task
-terminal/models/*.tflite
-terminal/models/*.onnx
+.DS_Store
+node_modules/

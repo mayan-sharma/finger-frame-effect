@@ -1,8 +1,15 @@
 // Finger Frame Effect
 // Hold both hands up in an open "L" (thumb + index spread). The four fingertips
 // form a quad, and the selected visual effect renders inside it.
-// Keys 1-7 switch effects; arrow keys / click cycle. Append ?demo for a
+// Keys 1-9 and 0 switch effects; arrow keys / click cycle. Append ?demo for a
 // synthetic scene when no camera is available.
+//
+// Beyond the seven pixel effects:
+//   Anime  — AnimeGANv2 restyles the framed region (onnxruntime-web, WebGPU
+//            with a wasm fallback), run async so tracking never stalls.
+//   Matrix — digital rain in front of you; `k` cuts you out so it falls behind.
+//   Portal — you stay real (selfie segmentation) and the world behind you is
+//            replaced; press its key again to cycle scenes.
 
 "use strict";
 
@@ -26,7 +33,51 @@ const VG_SCALE = 4;              // Van Gogh gradient-field downsample factor
 const POSTER_LEVELS = 6;         // toon color quantization bands
 const TOON_W = 320;              // toon working width
 
-const EFFECTS = ["Pixelate", "Blur", "Invert", "Noir", "Glitch", "Toon", "Van Gogh"];
+const EFFECTS = ["Pixelate", "Blur", "Invert", "Noir", "Glitch", "Toon",
+                 "Van Gogh", "Anime", "Matrix", "Portal"];
+
+// CDNs are tried in order. jsdelivr is the usual first choice, but it is
+// blocked or TLS-untrusted on some networks and machines, which fails the
+// dynamic import — so every CDN-loaded module falls back rather than leaving
+// the app dead. `pickCdn` remembers whichever host answered first.
+const CDNS = ["https://cdn.jsdelivr.net/npm/", "https://unpkg.com/"];
+let cdnBase = null;
+
+// Resolve a package path against the first CDN that serves it.
+async function pickCdn(probePath) {
+  if (cdnBase) return cdnBase;
+  for (const base of CDNS) {
+    try {
+      const res = await fetch(base + probePath, { method: "HEAD" });
+      if (res.ok) { cdnBase = base; return base; }
+    } catch (err) {
+      console.warn("CDN unreachable:", base, err.message);
+    }
+  }
+  cdnBase = CDNS[0];      // nothing answered; let the real load report why
+  return cdnBase;
+}
+
+// --- Anime: AnimeGANv2 (Hayao) via onnxruntime-web -------------------------
+// NHWC float32 in [-1, 1], dynamic H/W. GitHub release assets send no CORS
+// headers; Hugging Face `resolve/` URLs do.
+const ORT_PATH = "onnxruntime-web@1.19.2/dist/";
+const ANIME_MODEL_URL =
+  "https://huggingface.co/vumichien/AnimeGANv2_Hayao/resolve/main/AnimeGANv2_Hayao.onnx";
+// Working widths, stepped by measured inference time. The browser has a real
+// GPU, so these are far above what the terminal build could afford.
+const ANIME_SIZES = [256, 384, 512];
+const ANIME_ALIGN = 32;          // the generator downsamples 3x
+
+// --- Portal / Matrix: person mask ------------------------------------------
+const SEG_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/image_segmenter/" +
+  "selfie_segmenter/float16/latest/selfie_segmenter.tflite";
+const PORTAL_SCENES = ["Space", "Synthwave", "Sunset"];
+
+// Matrix rain, ported from the terminal build. Rendered on a coarse grid and
+// scaled up, so the glyph cells stay chunky and readable.
+const MATRIX_CHARS = "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789XYZ";
 
 // ---------------------------------------------------------------------------
 // DOM / canvases
@@ -56,6 +107,9 @@ const sGlitchC = makeScratch(false);
 const sToon = makeScratch(true);
 const sVgSmall = makeScratch(true);
 const sVgOut = makeScratch(false);
+const sScene = makeScratch(false);
+const sPerson = makeScratch(false);
+const sAnimeIn = makeScratch(true);
 
 function sizeScratch(s, w, h) {
   if (s.c.width !== w || s.c.height !== h) { s.c.width = w; s.c.height = h; }
@@ -67,9 +121,32 @@ function sizeScratch(s, w, h) {
 // ---------------------------------------------------------------------------
 
 let landmarker = null;
-let demoMode = new URLSearchParams(location.search).has("demo");
+const urlParams = new URLSearchParams(location.search);
+let demoMode = urlParams.has("demo");
 let cameraReady = false;
 let effectIndex = 0;
+
+// Anime state. Inference is async: the loop never awaits it, and the newest
+// finished frame is stretched to wherever the quad has moved since.
+let ort = null;
+let animeSession = null;
+let animeState = "idle";        // idle | loading | ready | error
+let animeBusy = false;
+let animeResult = null;
+let animeTier = 1;
+
+// Person segmentation (Portal, and Matrix when keepPerson is on).
+let visionLib = null;
+let segmenter = null;
+let segState = "idle";          // idle | loading | ready | error
+let maskReady = false;
+let portalScene = 0;
+// Matrix default: rain in FRONT of you. Toggle with `k` to cut yourself out
+// of it instead, which is what the terminal build called --keep-person.
+let keepPerson = false;
+const maskCanvas = document.createElement("canvas");
+const maskCtx = maskCanvas.getContext("2d");
+let maskImageData = null;
 
 // Quad tracking state
 let smoothQuad = null;           // [{x,y} x4] smoothed screen-space corners
@@ -103,22 +180,39 @@ function buildHint() {
   EFFECTS.forEach((name, i) => {
     const el = document.createElement("div");
     el.className = "fx" + (i === effectIndex ? " active" : "");
-    el.innerHTML = `<span class="k">${i + 1}</span>${name}`;
+    // The tenth chip is reached with 0, not "10".
+    el.innerHTML = `<span class="k">${(i + 1) % 10}</span>${name}`;
     el.addEventListener("click", () => setEffect(i));
     hintEl.appendChild(el);
   });
 }
 function setEffect(i) {
-  effectIndex = (i + EFFECTS.length) % EFFECTS.length;
+  const idx = (i + EFFECTS.length) % EFFECTS.length;
+  // Pressing the active Portal key again cycles its scene, so all three
+  // worlds are reachable without extra keys.
+  if (idx === effectIndex && EFFECTS[idx] === "Portal") {
+    portalScene = (portalScene + 1) % PORTAL_SCENES.length;
+    flashStatus(`Portal → ${PORTAL_SCENES[portalScene]}`);
+  }
+  effectIndex = idx;
   [...hintEl.children].forEach((el, j) => el.classList.toggle("active", j === effectIndex));
+  const name = EFFECTS[idx];
+  if (name === "Anime") ensureAnime();
+  if (name === "Portal" || (name === "Matrix" && keepPerson)) ensureSegmenter();
 }
 buildHint();
 
 addEventListener("keydown", (e) => {
-  const n = parseInt(e.key, 10);
+  // 1-9 then 0 for the tenth effect, matching the on-screen chips.
+  const n = e.key === "0" ? 10 : parseInt(e.key, 10);
   if (n >= 1 && n <= EFFECTS.length) setEffect(n - 1);
   else if (e.key === "ArrowRight") setEffect(effectIndex + 1);
   else if (e.key === "ArrowLeft") setEffect(effectIndex - 1);
+  else if (e.key === "k" || e.key === "K") {
+    keepPerson = !keepPerson;
+    flashStatus(keepPerson ? "Matrix rain behind you" : "Matrix rain in front");
+    if (keepPerson) ensureSegmenter();
+  }
 });
 canvas.addEventListener("click", () => setEffect(effectIndex + 1));
 
@@ -128,18 +222,34 @@ function setStatus(text) {
   statusEl.classList.remove("hidden");
 }
 
+let flashTimer = 0;
+function flashStatus(text) {
+  setStatus(text);
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => setStatus(null), 1600);
+}
+
 // ---------------------------------------------------------------------------
 // Camera + MediaPipe init
 // ---------------------------------------------------------------------------
 
+// The tasks-vision module and its wasm fileset are shared by the hand
+// tracker and the segmenter; loading them twice would download the runtime
+// twice for no reason.
+const VISION_PATH = "@mediapipe/tasks-vision@0.10.14/";
+
+async function loadVision() {
+  if (visionLib) return visionLib;
+  const base = (await pickCdn(VISION_PATH + "vision_bundle.mjs")) + VISION_PATH;
+  const mod = await import(base + "vision_bundle.mjs");
+  const fileset = await mod.FilesetResolver.forVisionTasks(base + "wasm");
+  visionLib = { mod, fileset };
+  return visionLib;
+}
+
 async function initTracker() {
-  const { FilesetResolver, HandLandmarker } = await import(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs"
-  );
-  const fileset = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-  );
-  landmarker = await HandLandmarker.createFromOptions(fileset, {
+  const { mod, fileset } = await loadVision();
+  landmarker = await mod.HandLandmarker.createFromOptions(fileset, {
     baseOptions: {
       modelAssetPath:
         "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
@@ -163,6 +273,147 @@ async function initCamera() {
   cameraReady = true;
 }
 
+// --- Selfie segmentation ---------------------------------------------------
+
+async function ensureSegmenter() {
+  if (demoMode || segState !== "idle") return;
+  segState = "loading";
+  try {
+    const { mod, fileset } = await loadVision();
+    segmenter = await mod.ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: SEG_MODEL_URL, delegate: "GPU" },
+      runningMode: "VIDEO",
+      outputConfidenceMasks: true,
+      outputCategoryMask: false,
+    });
+    segState = "ready";
+  } catch (err) {
+    console.warn("Segmenter unavailable:", err);
+    segState = "error";
+    flashStatus("Person mask unavailable — showing scene only");
+  }
+}
+
+// Copies the confidence mask into maskCanvas (video space, white = person,
+// confidence in alpha) so it can be used as a clip source.
+function writeMask(result) {
+  const m = result.confidenceMasks && result.confidenceMasks[0];
+  if (!m) return;
+  const mw = m.width, mh = m.height;
+  const conf = m.getAsFloat32Array();
+  if (maskCanvas.width !== mw || maskCanvas.height !== mh) {
+    maskCanvas.width = mw;
+    maskCanvas.height = mh;
+    maskImageData = maskCtx.createImageData(mw, mh);
+  }
+  const px = maskImageData.data;
+  for (let i = 0, p = 0; i < conf.length; i++, p += 4) {
+    px[p] = 255; px[p + 1] = 255; px[p + 2] = 255;
+    px[p + 3] = (conf[i] * 255) | 0;
+  }
+  maskCtx.putImageData(maskImageData, 0, 0);
+  maskReady = true;
+}
+
+// --- Anime -----------------------------------------------------------------
+
+async function ensureAnime() {
+  if (animeState !== "idle") return;
+  animeState = "loading";
+  try {
+    setStatus("Loading Anime engine…");
+    const base = (await pickCdn(ORT_PATH + "ort.webgpu.min.mjs")) + ORT_PATH;
+    ort = await import(base + "ort.webgpu.min.mjs");
+    ort.env.wasm.wasmPaths = base;
+    setStatus("Loading Anime model (8 MB)…");
+    try {
+      animeSession = await ort.InferenceSession.create(ANIME_MODEL_URL, {
+        executionProviders: ["webgpu"],
+      });
+    } catch (err) {
+      console.warn("WebGPU unavailable for Anime, using wasm:", err);
+      animeTier = 0;                 // wasm is much slower — start small
+      animeSession = await ort.InferenceSession.create(ANIME_MODEL_URL, {
+        executionProviders: ["wasm"],
+      });
+    }
+    animeState = "ready";
+    flashStatus("Anime ready ✨");
+  } catch (err) {
+    console.warn("Anime effect unavailable:", err);
+    animeState = "error";
+    flashStatus("Anime model failed to load — using Toon");
+  }
+}
+
+async function runAnime(bx, by, bw, bh) {
+  animeBusy = true;
+  try {
+    const maxDim = ANIME_SIZES[animeTier];
+    const k = maxDim / Math.max(bw, bh);
+    const tw = Math.max(96, Math.round((bw * k) / ANIME_ALIGN) * ANIME_ALIGN);
+    const th = Math.max(96, Math.round((bh * k) / ANIME_ALIGN) * ANIME_ALIGN);
+
+    const g = sizeScratch(sAnimeIn, tw, th);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(frame, bx, by, bw, bh, 0, 0, tw, th);
+    const src = g.getImageData(0, 0, tw, th).data;
+
+    const data = new Float32Array(tw * th * 3);
+    for (let i = 0, p = 0; p < src.length; p += 4) {
+      data[i++] = src[p] / 127.5 - 1;
+      data[i++] = src[p + 1] / 127.5 - 1;
+      data[i++] = src[p + 2] / 127.5 - 1;
+    }
+
+    const t0 = performance.now();
+    const feeds = {};
+    feeds[animeSession.inputNames[0]] =
+      new ort.Tensor("float32", data, [1, th, tw, 3]);
+    const out = await animeSession.run(feeds);
+    const dur = performance.now() - t0;
+
+    const tensor = out[animeSession.outputNames[0]];
+    const [, oh, ow] = tensor.dims;
+    const o = tensor.data;
+    if (!animeResult) animeResult = document.createElement("canvas");
+    if (animeResult.width !== ow || animeResult.height !== oh) {
+      animeResult.width = ow;
+      animeResult.height = oh;
+    }
+    const rctx = animeResult.getContext("2d");
+    const img = rctx.createImageData(ow, oh);
+    const d = img.data;
+    for (let i = 0, p = 0; p < d.length; p += 4) {
+      d[p] = Math.max(0, Math.min(255, (o[i++] + 1) * 127.5));
+      d[p + 1] = Math.max(0, Math.min(255, (o[i++] + 1) * 127.5));
+      d[p + 2] = Math.max(0, Math.min(255, (o[i++] + 1) * 127.5));
+      d[p + 3] = 255;
+    }
+    rctx.putImageData(img, 0, 0);
+
+    // Track the measured cost: step up while there is headroom, down when a
+    // frame gets expensive, so this adapts to the machine it lands on.
+    if (dur > 420 && animeTier > 0) animeTier--;
+    else if (dur < 130 && animeTier < ANIME_SIZES.length - 1) animeTier++;
+  } catch (err) {
+    console.warn("Anime inference failed:", err);
+    animeState = "error";
+    flashStatus("Anime inference failed — using Toon");
+  } finally {
+    animeBusy = false;
+  }
+}
+
+// ?fx=8 selects a starting effect (1-based), ?scene=2 a portal scene (0-based).
+{
+  const fx = parseInt(urlParams.get("fx"), 10);
+  const sc = parseInt(urlParams.get("scene"), 10);
+  if (sc >= 0 && sc < PORTAL_SCENES.length) portalScene = sc;
+  if (urlParams.has("keepPerson")) keepPerson = true;
+  if (fx >= 1 && fx <= EFFECTS.length) setEffect(fx - 1);
+}
+
 async function boot() {
   if (!demoMode) {
     try {
@@ -178,7 +429,7 @@ async function boot() {
   }
   if (demoMode) {
     badgeEl.classList.add("show");
-    setStatus("Demo mode — synthetic frame, keys 1-7 switch effects");
+    setStatus("Demo mode — synthetic frame, keys 1-9 / 0 switch effects");
   }
   requestAnimationFrame(tick);
 }
@@ -648,7 +899,249 @@ function fxVanGogh(bx, by, bw, bh) {
   ctx.drawImage(sVgOut.c, 0, 0, bw, bh, bx, by, bw, bh);
 }
 
-const EFFECT_FNS = [fxPixelate, fxBlur, fxInvert, fxNoir, fxGlitch, fxToon, fxVanGogh];
+// --- Anime ------------------------------------------------------------------
+
+function fxAnime(bx, by, bw, bh) {
+  // Kick off inference on the current contents and draw whatever finished
+  // last. Never awaited, so tracking keeps full frame rate and the portal
+  // trails reality by roughly one inference.
+  if (animeState === "ready" && !animeBusy && bw > 48 && bh > 48) {
+    runAnime(bx, by, bw, bh);
+  }
+  if (animeResult) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(animeResult, 0, 0, animeResult.width, animeResult.height,
+      bx, by, bw, bh);
+  } else {
+    fxToon(bx, by, bw, bh);   // stand-in until the first stylized frame lands
+  }
+}
+
+// --- Person compositing -----------------------------------------------------
+
+// Draws the live person (segmentation mask) over whatever is already in the
+// box, so an effect can be placed behind them.
+function drawPersonOver(bx, by, bw, bh) {
+  if (!maskReady || segState !== "ready") return;
+  const p = sizeScratch(sPerson, bw, bh);
+  p.save();
+  p.clearRect(0, 0, bw, bh);
+  p.drawImage(frame, bx, by, bw, bh, 0, 0, bw, bh);
+  p.globalCompositeOperation = "destination-in";
+  p.filter = "blur(3px)";            // soften the mask edge
+  p.translate(-bx, -by);
+  p.transform(-fit.s, 0, 0, fit.s, fit.ox + fit.s * fit.vw, fit.oy);
+  p.scale(fit.vw / maskCanvas.width, fit.vh / maskCanvas.height);
+  p.drawImage(maskCanvas, 0, 0);
+  p.restore();
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = Math.max(10, bw * 0.03);
+  ctx.drawImage(sPerson.c, bx, by);
+  ctx.restore();
+}
+
+// --- Matrix -----------------------------------------------------------------
+
+function fxMatrix(bx, by, bw, bh, t) {
+  const g = sizeScratch(sScene, bw, bh);
+  g.fillStyle = "#010703";
+  g.fillRect(0, 0, bw, bh);
+
+  const cols = Math.max(10, Math.min(64, Math.round(bw / 22)));
+  const cw = bw / cols;
+  const fs = cw * 0.9;
+  const rows = Math.ceil(bh / fs);
+  const trail = 14;
+  g.font = `bold ${fs}px monospace`;
+  g.textAlign = "center";
+  for (let c = 0; c < cols; c++) {
+    // Per-column speed and offset, fixed by hash: the rain is steady rather
+    // than reshuffling every frame.
+    const speed = 0.006 + 0.012 * vgHash(c, 3);
+    const head = ((t * speed + vgHash(c, 9) * 100) % (rows + trail)) - 1;
+    for (let k = 0; k < trail; k++) {
+      const row = Math.floor(head) - k;
+      if (row < 0 || row > rows) continue;
+      const mut = Math.floor(t / 400);
+      const ch = MATRIX_CHARS[
+        Math.floor(vgHash(c * 31 + 7, row * 17 + (k === 0 ? mut : 0)) *
+          MATRIX_CHARS.length)
+      ];
+      g.fillStyle = k === 0
+        ? "rgba(215,255,228,0.96)"
+        : `rgba(0,255,90,${(1 - k / trail) * 0.8})`;
+      g.fillText(ch, c * cw + cw / 2, row * fs + fs);
+    }
+  }
+  ctx.drawImage(sScene.c, bx, by);
+  // Default is rain in front; `k` puts it behind you instead.
+  if (keepPerson) drawPersonOver(bx, by, bw, bh);
+}
+
+// --- Portal -----------------------------------------------------------------
+
+function drawSpace(g, w, h, t) {
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, "#04050f");
+  grad.addColorStop(0.6, "#0a0f2c");
+  grad.addColorStop(1, "#1c1038");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+
+  const neb = (fx, fy, r, color) => {
+    const ng = g.createRadialGradient(w * fx, h * fy, 0, w * fx, h * fy, r);
+    ng.addColorStop(0, color);
+    ng.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = ng;
+    g.fillRect(0, 0, w, h);
+  };
+  neb(0.3 + 0.03 * Math.sin(t * 0.0002), 0.35, Math.max(w, h) * 0.5,
+      "rgba(120,60,220,0.16)");
+  neb(0.75, 0.7 + 0.03 * Math.cos(t * 0.00025), Math.max(w, h) * 0.45,
+      "rgba(40,190,200,0.13)");
+
+  for (let L = 0; L < 3; L++) {
+    const speed = 0.004 * (L + 1);
+    const size = 0.8 + L * 0.7;
+    for (let i = 0; i < 34; i++) {
+      const x = (vgHash(i, L * 11 + 1) * w + t * speed) % w;
+      const y = vgHash(i + 41, L * 7 + 3) * h;
+      const tw = 0.45 + 0.55 * Math.sin(t * 0.003 + i * 1.9 + L);
+      g.fillStyle = `rgba(255,255,255,${(0.35 + L * 0.16) * tw})`;
+      g.beginPath();
+      g.arc(x, y, size, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  const period = 2800;
+  const phase = (t % period) / period;
+  if (phase < 0.16) {
+    const epoch = Math.floor(t / period);
+    const sx = w * (0.15 + 0.6 * vgHash(epoch, 5));
+    const sy = h * (0.1 + 0.3 * vgHash(epoch, 9));
+    const d = phase / 0.16;
+    const len = w * 0.12;
+    g.strokeStyle = `rgba(255,255,255,${0.8 * (1 - d)})`;
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(sx + d * w * 0.3, sy + d * h * 0.18);
+    g.lineTo(sx + d * w * 0.3 - len, sy + d * h * 0.18 - len * 0.45);
+    g.stroke();
+  }
+}
+
+function drawSynthwave(g, w, h, t) {
+  const horizon = h * 0.55;
+  const sky = g.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, "#12002e");
+  sky.addColorStop(0.6, "#3c0663");
+  sky.addColorStop(1, "#b3125e");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, w, horizon);
+
+  const R = Math.min(w, h) * 0.24;
+  const cx = w * 0.5, cy = horizon - R * 0.25;
+  g.save();
+  g.beginPath();
+  g.rect(0, 0, w, horizon);
+  g.clip();
+  const sun = g.createLinearGradient(0, cy - R, 0, cy + R);
+  sun.addColorStop(0, "#ffd319");
+  sun.addColorStop(1, "#ff2975");
+  g.fillStyle = sun;
+  g.shadowColor = "rgba(255,60,140,0.8)";
+  g.shadowBlur = R * 0.5;
+  g.beginPath();
+  g.arc(cx, cy, R, 0, Math.PI * 2);
+  g.fill();
+  g.shadowBlur = 0;
+  // Scanline cutouts drifting up through the sun.
+  g.globalCompositeOperation = "destination-out";
+  for (let i = 0; i < 6; i++) {
+    const gap = R * (0.05 + i * 0.02);
+    const yy = cy + R * 0.05 + i * R * 0.16 - ((t * 0.01) % (R * 0.16));
+    g.fillRect(cx - R, yy, R * 2, gap * 0.5);
+  }
+  g.restore();
+
+  g.fillStyle = "#0d0221";
+  g.fillRect(0, horizon, w, h - horizon);
+  g.strokeStyle = "rgba(255,42,109,0.75)";
+  g.lineWidth = Math.max(1, w * 0.002);
+  for (let k = -9; k <= 9; k++) {
+    g.beginPath();
+    g.moveTo(cx + k * w * 0.02, horizon);
+    g.lineTo(cx + k * w * 0.16, h + 2);
+    g.stroke();
+  }
+  for (let j = 0; j < 9; j++) {
+    const z = (j / 9 + (t * 0.00035) % (1 / 9)) % 1;
+    const y = horizon + z * z * (h - horizon);
+    g.globalAlpha = 0.25 + 0.75 * z;
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(w, y);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+
+function drawSunset(g, w, h, t) {
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, "#12224a");
+  sky.addColorStop(0.45, "#7a3b6b");
+  sky.addColorStop(0.75, "#d9713f");
+  sky.addColorStop(1, "#f3c05a");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, w, h);
+
+  const cy = h * 0.62;
+  g.fillStyle = "rgba(255,226,150,0.95)";
+  g.beginPath();
+  g.arc(w * 0.5, cy, Math.min(w, h) * 0.16, 0, Math.PI * 2);
+  g.fill();
+
+  // Layered clouds drifting at different speeds for depth.
+  for (let L = 0; L < 3; L++) {
+    g.fillStyle = `rgba(${30 + L * 20},${20 + L * 14},${50 + L * 20},${0.5 - L * 0.12})`;
+    for (let i = 0; i < 4; i++) {
+      const cw2 = w * (0.3 + 0.16 * vgHash(i, L));
+      const x = ((vgHash(i, L + 5) * w + t * (0.006 + L * 0.004)) % (w + cw2)) - cw2 / 2;
+      const y = h * (0.18 + 0.22 * vgHash(i + 3, L + 1)) + L * h * 0.06;
+      g.beginPath();
+      g.ellipse(x, y, cw2 * 0.5, h * 0.035, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  g.fillStyle = "#1a1230";
+  g.beginPath();
+  g.moveTo(0, h);
+  for (let x = 0; x <= w; x += 8) {
+    g.lineTo(x, h * 0.8 + Math.sin(x * 0.01 + 1.2) * h * 0.05);
+  }
+  g.lineTo(w, h);
+  g.fill();
+}
+
+const PORTAL_SCENE_FNS = [drawSpace, drawSynthwave, drawSunset];
+
+function fxPortal(bx, by, bw, bh, t) {
+  // Another world replaces the box…
+  const g = sizeScratch(sScene, bw, bh);
+  g.save();
+  PORTAL_SCENE_FNS[portalScene](g, bw, bh, t);
+  g.restore();
+  ctx.drawImage(sScene.c, bx, by);
+  // …except you, who stay real in front of it.
+  drawPersonOver(bx, by, bw, bh);
+}
+
+const EFFECT_FNS = [fxPixelate, fxBlur, fxInvert, fxNoir, fxGlitch, fxToon,
+                    fxVanGogh, fxAnime, fxMatrix, fxPortal];
 
 // ---------------------------------------------------------------------------
 // Frame overlay: corner brackets so the frame reads as a "camera"
@@ -716,6 +1209,12 @@ function tick(t) {
       lastVideoTime = video.currentTime;
       const res = landmarker.detectForVideo(video, t);
       raw = computeQuad(res.landmarks);
+      // Only segment when an effect actually needs the person mask.
+      const fxName = EFFECTS[effectIndex];
+      const wantsMask = fxName === "Portal" || (fxName === "Matrix" && keepPerson);
+      if (wantsMask && segState === "ready") {
+        segmenter.segmentForVideo(video, t, writeMask);
+      }
     } else if (smoothQuad) {
       raw = null; // no new video frame; treat as a (buffered) dropout
     }
