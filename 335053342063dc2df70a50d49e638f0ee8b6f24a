@@ -1,0 +1,25 @@
+main.js
+  a67aab24f4b32211 22-42,515-581,1300-1304
+README.md
+  a67aab24f4b32211 46-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "335053342063dc2df70a50d49e638f0ee8b6f24a",
+  "prompts": {
+    "a67aab24f4b32211": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b7050124-78a2-4ceb-8d4c-1bf833537fab",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mayan.sharma@1mg.com",
+      "messages": [],
+      "total_additions": 101,
+      "total_deletions": 0,
+      "accepted_lines": 101,
+      "overriden_lines": 0
+    }
+  }
+}
