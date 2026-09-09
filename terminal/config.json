@@ -1,0 +1,20 @@
+{
+  "armed_on_start": true,
+  "prefer_geometry": false,
+  "frame_effect": "matrix",
+  "arm_toggle": { "gesture": "Open_Palm", "hold_ms": 1200 },
+  "bindings": [
+    { "gesture": "Victory", "hold_ms": 500, "action": "warp_claude", "params": { "cwd": "~" }, "cooldown_ms": 4000 },
+    { "gesture": "Pinch", "action": "volume_drag", "while_held": true, "cooldown_ms": 0 },
+    { "gesture": "Closed_Fist", "hold_ms": 600, "action": "warp_esc", "cooldown_ms": 2500 },
+    { "gesture": "Thumb_Down", "hold_ms": 700, "action": "key", "params": { "keys": "cmd+w" }, "cooldown_ms": 2000 },
+    { "gesture": "Thumb_Up", "hold_ms": 500, "action": "key", "params": { "keys": "enter" }, "cooldown_ms": 1200 },
+    { "gesture": "Pointing_Up", "hold_ms": 600, "action": "dictate", "cooldown_ms": 2500 },
+    { "gesture": "Point", "hold_ms": 600, "action": "dictate", "cooldown_ms": 2500 },
+    { "gesture": "Middle_Finger", "hold_ms": 900, "action": "lock", "cooldown_ms": 5000 },
+    { "gesture": "Swipe_Left", "action": "key", "params": { "keys": "ctrl+right" }, "cooldown_ms": 900 },
+    { "gesture": "Swipe_Right", "action": "key", "params": { "keys": "ctrl+left" }, "cooldown_ms": 900 },
+    { "gesture": "Swipe_Up", "action": "scroll", "params": { "amount": 5 }, "cooldown_ms": 350 },
+    { "gesture": "Swipe_Down", "action": "scroll", "params": { "amount": -5 }, "cooldown_ms": 350 }
+  ]
+}

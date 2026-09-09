@@ -137,3 +137,58 @@ scene. Both it and `k`-mode need the camera, so demo mode shows scenes only.
 Modules load from jsDelivr with an automatic fallback to unpkg, since
 jsDelivr is blocked or TLS-untrusted on some networks. Needs an internet
 connection for the WASM + models (demo mode works offline once cached).
+
+---
+
+# Terminal edition — gesture control for your computer
+
+`terminal/` is the native sibling. The webcam renders **inside your terminal**
+as ANSI block video, and gestures control the machine — no browser sandbox,
+so it can do the one thing the web app cannot: send keystrokes to other
+applications. Cross-platform: Windows, macOS, Linux (not WSL — no webcam
+access there).
+
+The trade is resolution. A terminal shows roughly 240x70 "pixels" against the
+browser's full camera frame, so the visual effects are far weaker here. Use
+this edition for **control**, the browser for **looks**.
+
+## Setup
+
+```
+cd terminal
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt     # macOS / Linux
+# .venv\Scripts\pip install -r requirements.txt   # Windows
+.venv/bin/python app.py
+```
+
+Models (~8 MB gesture recognizer, ~8 MB anime) download on first use.
+
+Flags: `--headless`, `--camera N`, `--spotlight`, `--capture WxH`,
+`--frame-fx matrix|anime|pixelate|invert|off`, `--keep-person`,
+`--blocks quad|half`, `--selftest N`.
+
+Press **1-4** while running to switch the portal effect, **q** to quit.
+
+## Default gestures (edit `terminal/config.json`)
+
+| Gesture | Action |
+| ------- | ------ |
+| Snap (thumb+middle release) | Open a new Claude instance in Warp |
+| Fist, hold 0.6s | Focus Warp, send Esc (interrupts Claude) |
+| Open palm, hold 1.2s | Arm / disarm all gestures |
+| Thumb up / down | Enter / close window |
+| Pinch and drag | Volume |
+| Swipe left / right | Switch desktop |
+
+Safety rails: hold-times before firing, per-gesture cooldowns, drift reset (a
+moving hand doesn't count as a hold), and the palm toggle as a global
+kill-switch (`SAFE` mode).
+
+## Platform notes
+
+- **macOS**: keystrokes need Accessibility permission for your terminal
+  (System Settings -> Privacy & Security -> Accessibility).
+- **Linux**: install `xdotool`, `playerctl`, `pactl`; X11 assumed.
+- **mediapipe is pinned below 1.0** — 1.0.x aborts at startup with
+  `Check failed: service_ Service is unavailable.`
