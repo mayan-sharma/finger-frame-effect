@@ -59,7 +59,12 @@ const POSTER_LEVELS = 6;         // toon color quantization bands
 const TOON_W = 320;              // toon working width
 
 const EFFECTS = ["Pixelate", "Blur", "Invert", "Noir", "Glitch", "Toon",
-                 "Van Gogh", "Anime", "Matrix", "Portal"];
+                 "Van Gogh", "Anime", "Matrix", "Portal",
+                 "Kaleido", "Liquid", "Prism"];
+// Effects 1-10 are the number row (0 is the tenth); the GPU shaders past that
+// take letters. Single source of truth for the chips and the key handler.
+const EFFECT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+                     "q", "w", "e"];
 
 // CDNs are tried in order. jsdelivr is the usual first choice, but it is
 // blocked or TLS-untrusted on some networks and machines, which fails the
@@ -145,6 +150,7 @@ const sVgOut = makeScratch(false);
 const sScene = makeScratch(false);
 const sPerson = makeScratch(false);
 const sAnimeIn = makeScratch(true);
+const sGlSrc = makeScratch(false);   // crop uploaded as the shader texture
 
 function sizeScratch(s, w, h) {
   if (s.c.width !== w || s.c.height !== h) { s.c.width = w; s.c.height = h; }
@@ -218,8 +224,8 @@ function buildHint() {
   EFFECTS.forEach((name, i) => {
     const el = document.createElement("div");
     el.className = "fx" + (i === effectIndex ? " active" : "");
-    // The tenth chip is reached with 0, not "10".
-    el.innerHTML = `<span class="k">${(i + 1) % 10}</span><span class="n">${name}</span>`;
+    el.innerHTML = `<span class="k">${EFFECT_KEYS[i]}</span>` +
+      `<span class="n">${name}</span>`;
     el.addEventListener("click", () => setEffect(i));
     hintEl.appendChild(el);
   });
@@ -261,9 +267,8 @@ function setEffect(i) {
 buildHint();
 
 addEventListener("keydown", (e) => {
-  // 1-9 then 0 for the tenth effect, matching the on-screen chips.
-  const n = e.key === "0" ? 10 : parseInt(e.key, 10);
-  if (n >= 1 && n <= EFFECTS.length) setEffect(n - 1);
+  const idx = EFFECT_KEYS.indexOf(e.key.toLowerCase());
+  if (idx >= 0) setEffect(idx);
   else if (e.key === "ArrowRight") setEffect(effectIndex + 1);
   else if (e.key === "ArrowLeft") setEffect(effectIndex - 1);
   else if (e.key === "k" || e.key === "K") {
@@ -527,7 +532,7 @@ async function boot() {
   }
   if (demoMode) {
     badgeEl.classList.add("show");
-    setStatus("Demo mode — synthetic frame, keys 1-9 / 0 switch effects");
+    setStatus("Demo mode — synthetic frame, keys 1-0 / q w e switch effects");
   }
   requestAnimationFrame(tick);
 }
@@ -1315,8 +1320,230 @@ function fxPortal(bx, by, bw, bh, t) {
   drawPersonOver(bx, by, bw, bh);
 }
 
+
+// ---------------------------------------------------------------------------
+// WebGL shader effects
+//
+// These run on the GPU in one pass over the framed region, which is why they
+// can afford per-pixel work (kaleidoscope folding, liquid warping, chromatic
+// dispersion) that the Canvas 2D effects above cannot.
+//
+// The integration keeps the existing contract: render into an offscreen GL
+// canvas sized to the quad's bounding box, then hand that back as an image
+// for the 2D context to draw inside its clip path. Tracking, smoothing and
+// clipping stay exactly as they are.
+//
+// One GL context is shared by every shader — contexts are a limited resource
+// and browsers drop the oldest when a page makes too many — so the programs
+// are compiled once, cached by name, and swapped per frame.
+// ---------------------------------------------------------------------------
+
+const glCanvas = document.createElement("canvas");
+let gl = null;
+let glFailed = false;
+let glQuadBuf = null;
+let glTex = null;
+const glPrograms = new Map();      // name -> { program, uniforms }
+
+const GL_VERT = `
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+// Every fragment shader gets the same uniforms, so the draw path is uniform:
+//   uTex  the framed region, uTime seconds, uRes its pixel size.
+const GL_FRAG_HEAD = `
+precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform float uTime;
+uniform vec2 uRes;
+`;
+
+const GL_SHADERS = {
+  // Folds the region into `SEG` mirrored wedges around its centre, so the
+  // subject is repeated into a rotating kaleidoscope.
+  Kaleido: `
+    #define SEG 6.0
+    void main() {
+      vec2 p = vUv - 0.5;
+      p.x *= uRes.x / uRes.y;
+      float r = length(p);
+      float a = atan(p.y, p.x) + uTime * 0.25;
+      float seg = 6.2831853 / SEG;
+      // Fold the angle into one wedge, then mirror alternate wedges so the
+      // seams line up instead of showing a hard cut.
+      a = mod(a, seg);
+      a = abs(a - seg * 0.5);
+      vec2 uv = vec2(cos(a), sin(a)) * r;
+      uv.x *= uRes.y / uRes.x;
+      uv += 0.5;
+      // The fold can reach outside the source; mirror rather than clamp so
+      // the edges keep detail instead of smearing one row of pixels.
+      uv = abs(mod(uv, 2.0) - 1.0);
+      gl_FragColor = texture2D(uTex, uv);
+    }`,
+
+  // Domain warp: two layers of sine ripple displace the lookup, giving a
+  // slow liquid drift that reads as underwater.
+  Liquid: `
+    void main() {
+      vec2 uv = vUv;
+      float t = uTime * 0.9;
+      uv.x += sin(uv.y * 11.0 + t) * 0.012
+            + sin(uv.y * 23.0 - t * 1.7) * 0.006;
+      uv.y += cos(uv.x * 13.0 - t * 1.2) * 0.012
+            + cos(uv.x * 27.0 + t * 0.9) * 0.005;
+      uv = clamp(uv, 0.0, 1.0);
+      vec3 col = texture2D(uTex, uv).rgb;
+      // Lift the highlights slightly where the warp is strongest, so the
+      // ripples catch light instead of just sliding the image around.
+      float shimmer = sin(uv.y * 40.0 + t * 3.0) * 0.5 + 0.5;
+      col += shimmer * 0.06;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+
+  // Radial chromatic dispersion plus a soft vignette: the channels separate
+  // more the further they are from the centre, like a cheap wide lens.
+  Prism: `
+    void main() {
+      vec2 c = vUv - 0.5;
+      float r = length(c);
+      float amt = (0.004 + 0.02 * r * r) * (1.0 + 0.35 * sin(uTime * 1.3));
+      vec2 dir = normalize(c + 1e-6);
+      float rr = texture2D(uTex, vUv + dir * amt).r;
+      float gg = texture2D(uTex, vUv).g;
+      float bb = texture2D(uTex, vUv - dir * amt).b;
+      vec3 col = vec3(rr, gg, bb);
+      col *= 1.0 - 0.5 * r * r;                    // vignette
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
+function glCompile(src, type) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
+    throw new Error("shader compile failed: " + log);
+  }
+  return sh;
+}
+
+function glInit() {
+  if (gl || glFailed) return gl;
+  try {
+    gl = glCanvas.getContext("webgl", {
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: false,
+      antialias: false,
+    });
+    if (!gl) throw new Error("no webgl context");
+
+    glQuadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 3, -1, -1, 3]),   // one oversized triangle
+      gl.STATIC_DRAW);
+
+    glTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glTex);
+    // CLAMP + LINEAR, and no mipmaps: the source is a non-power-of-two crop,
+    // which WebGL1 only supports under exactly these settings.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  } catch (err) {
+    console.warn("WebGL unavailable:", err);
+    glFailed = true;
+    gl = null;
+  }
+  return gl;
+}
+
+function glProgram(name) {
+  let entry = glPrograms.get(name);
+  if (entry) return entry;
+  const vs = glCompile(GL_VERT, gl.VERTEX_SHADER);
+  const fs = glCompile(GL_FRAG_HEAD + GL_SHADERS[name], gl.FRAGMENT_SHADER);
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.bindAttribLocation(program, 0, "aPos");
+  gl.linkProgram(program);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const log = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error("shader link failed: " + log);
+  }
+  entry = {
+    program,
+    uTex: gl.getUniformLocation(program, "uTex"),
+    uTime: gl.getUniformLocation(program, "uTime"),
+    uRes: gl.getUniformLocation(program, "uRes"),
+  };
+  glPrograms.set(name, entry);
+  return entry;
+}
+
+// Runs `name` over the frame's [bx,by,bw,bh] region and draws the result into
+// the already-clipped 2D context. Falls back to the plain feed if GL is
+// unavailable or a shader fails, so a driver quirk can never blank the box.
+function runShader(name, bx, by, bw, bh, t) {
+  if (!glInit()) {
+    ctx.drawImage(frame, bx, by, bw, bh, bx, by, bw, bh);
+    return;
+  }
+  try {
+    if (glCanvas.width !== bw || glCanvas.height !== bh) {
+      glCanvas.width = bw;
+      glCanvas.height = bh;
+    }
+    const p = glProgram(name);
+    gl.viewport(0, 0, bw, bh);
+    gl.useProgram(p.program);
+
+    // Upload just the framed crop, not the whole canvas: the texture cost
+    // scales with the box, which is usually a small part of the screen.
+    const g = sizeScratch(sGlSrc, bw, bh);
+    g.drawImage(frame, bx, by, bw, bh, 0, 0, bw, bh);
+    gl.bindTexture(gl.TEXTURE_2D, glTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sGlSrc.c);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(p.uTex, 0);
+    gl.uniform1f(p.uTime, t / 1000);
+    gl.uniform2f(p.uRes, bw, bh);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    ctx.drawImage(glCanvas, bx, by);
+  } catch (err) {
+    console.warn(`Shader ${name} failed:`, err);
+    glFailed = true;
+    ctx.drawImage(frame, bx, by, bw, bh, bx, by, bw, bh);
+  }
+}
+
+function fxKaleido(bx, by, bw, bh, t) { runShader("Kaleido", bx, by, bw, bh, t); }
+function fxLiquid(bx, by, bw, bh, t)  { runShader("Liquid",  bx, by, bw, bh, t); }
+function fxPrism(bx, by, bw, bh, t)   { runShader("Prism",   bx, by, bw, bh, t); }
+
 const EFFECT_FNS = [fxPixelate, fxBlur, fxInvert, fxNoir, fxGlitch, fxToon,
-                    fxVanGogh, fxAnime, fxMatrix, fxPortal];
+                    fxVanGogh, fxAnime, fxMatrix, fxPortal,
+                    fxKaleido, fxLiquid, fxPrism];
 
 // ---------------------------------------------------------------------------
 // Frame overlay: corner brackets so the frame reads as a "camera"

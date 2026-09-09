@@ -21,7 +21,7 @@ No camera handy? Use the synthetic demo scene:
 http://localhost:8123/?demo
 ```
 
-Optional URL params: `?fx=N` starts on effect N (1–10), `?scene=N` picks the
+Optional URL params: `?fx=N` starts on effect N (1–13), `?scene=N` picks the
 Portal scene (0–2), `?style=N` the Anime style (0–3), `?keepPerson` puts the
 Matrix rain behind you. They combine with `?demo`.
 
@@ -39,9 +39,24 @@ Matrix rain behind you. They combine with `?demo`.
 | 8 | Anime — press again to cycle styles (Hayao / Shinkai / Ghibli / Sketch) |
 | 9 | Matrix |
 | 0 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
+| q | Kaleido — GPU shader: mirrored wedges rotating around the frame |
+| w | Liquid — GPU shader: rippling underwater warp |
+| e | Prism — GPU shader: radial chromatic dispersion + vignette |
 
 Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
 Matrix rain falls in front of you or behind.
+
+### GPU shader effects
+
+`q` / `w` / `e` run WebGL fragment shaders over the framed region — per-pixel
+work (angular folding, domain warping, channel dispersion) that the Canvas 2D
+effects can't afford. They render offscreen and hand the result back to the
+same clip path, so tracking and framing are untouched.
+
+One GL context is shared by all three and the programs compile once, since
+browsers drop the oldest context when a page opens too many. If WebGL is
+unavailable or a shader fails to compile, the box falls back to the plain
+feed rather than going blank.
 
 ### Slide gestures
 
