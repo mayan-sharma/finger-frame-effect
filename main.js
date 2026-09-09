@@ -60,7 +60,7 @@ const TOON_W = 320;              // toon working width
 
 const EFFECTS = ["Pixelate", "Blur", "Invert", "Noir", "Glitch", "Toon",
                  "Van Gogh", "Anime", "Matrix", "Portal",
-                 "Kaleido", "Liquid", "Prism"];
+                 "Ghost", "Dissolve", "Neon"];
 // Effects 1-10 are the number row (0 is the tenth); the GPU shaders past that
 // take letters. Single source of truth for the chips and the key handler.
 const EFFECT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
@@ -151,6 +151,7 @@ const sScene = makeScratch(false);
 const sPerson = makeScratch(false);
 const sAnimeIn = makeScratch(true);
 const sGlSrc = makeScratch(false);   // crop uploaded as the shader texture
+const sGlMask = makeScratch(false);  // person mask, cropped to the same box
 
 function sizeScratch(s, w, h) {
   if (s.c.width !== w || s.c.height !== h) { s.c.width = w; s.c.height = h; }
@@ -262,7 +263,10 @@ function setEffect(i) {
   refreshChips();
   const name = EFFECTS[idx];
   if (name === "Anime") ensureAnime();
-  if (name === "Portal" || (name === "Matrix" && keepPerson)) ensureSegmenter();
+  // The shader effects key off the person mask; without it they still render
+  // (person() returns 1) but lose the body-aware behaviour that is the point.
+  const MASK_FX = ["Portal", "Ghost", "Dissolve", "Neon"];
+  if (MASK_FX.includes(name) || (name === "Matrix" && keepPerson)) ensureSegmenter();
 }
 buildHint();
 
@@ -1344,6 +1348,16 @@ let glFailed = false;
 let glQuadBuf = null;
 let glTex = null;
 const glPrograms = new Map();      // name -> { program, uniforms }
+// Feedback needs last frame's OUTPUT, so the shader cannot draw straight to
+// the screen. It renders into one of two framebuffers which swap each frame:
+// read from the previous, write to the other. Textures are reallocated only
+// when the box size changes.
+let glFbo = [null, null];
+let glFboTex = [null, null];
+let glFboSize = [0, 0];
+let glPing = 0;
+let glMaskTex = null;
+let glPrevName = null;            // clears history when the effect changes
 
 const GL_VERT = `
 attribute vec2 aPos;
@@ -1356,69 +1370,152 @@ void main() {
 // Every fragment shader gets the same uniforms, so the draw path is uniform:
 //   uTex  the framed region, uTime seconds, uRes its pixel size.
 const GL_FRAG_HEAD = `
-precision mediump float;
+precision highp float;
 varying vec2 vUv;
-uniform sampler2D uTex;
+uniform sampler2D uTex;    // this frame's crop
+uniform sampler2D uPrev;   // last frame's OUTPUT — enables feedback / trails
+uniform sampler2D uMask;   // person confidence in .a (1 = person), if loaded
 uniform float uTime;
 uniform vec2 uRes;
+uniform float uHasMask;
+
+// Cheap value noise. Hash-based so it is stable in space and cheap enough to
+// call several times per pixel.
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),
+             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.02; a *= 0.5; }
+  return v;
+}
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+// Person coverage at a uv, 0 outside / 1 inside. Falls back to 1 so an
+// effect still does something sensible before the mask loads.
+float person(vec2 uv) {
+  if (uHasMask < 0.5) return 1.0;
+  return texture2D(uMask, uv).a;
+}
+
+// Sobel edge magnitude on luma — the silhouette and interior contours.
+float edge(vec2 uv, vec2 px) {
+  float tl = luma(texture2D(uTex, uv + px * vec2(-1, -1)).rgb);
+  float t  = luma(texture2D(uTex, uv + px * vec2( 0, -1)).rgb);
+  float tr = luma(texture2D(uTex, uv + px * vec2( 1, -1)).rgb);
+  float l  = luma(texture2D(uTex, uv + px * vec2(-1,  0)).rgb);
+  float r  = luma(texture2D(uTex, uv + px * vec2( 1,  0)).rgb);
+  float bl = luma(texture2D(uTex, uv + px * vec2(-1,  1)).rgb);
+  float b  = luma(texture2D(uTex, uv + px * vec2( 0,  1)).rgb);
+  float br = luma(texture2D(uTex, uv + px * vec2( 1,  1)).rgb);
+  float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+  float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
+  return length(vec2(gx, gy));
+}
 `;
 
 const GL_SHADERS = {
-  // Folds the region into `SEG` mirrored wedges around its centre, so the
-  // subject is repeated into a rotating kaleidoscope.
-  Kaleido: `
-    #define SEG 6.0
-    void main() {
-      vec2 p = vUv - 0.5;
-      p.x *= uRes.x / uRes.y;
-      float r = length(p);
-      float a = atan(p.y, p.x) + uTime * 0.25;
-      float seg = 6.2831853 / SEG;
-      // Fold the angle into one wedge, then mirror alternate wedges so the
-      // seams line up instead of showing a hard cut.
-      a = mod(a, seg);
-      a = abs(a - seg * 0.5);
-      vec2 uv = vec2(cos(a), sin(a)) * r;
-      uv.x *= uRes.y / uRes.x;
-      uv += 0.5;
-      // The fold can reach outside the source; mirror rather than clamp so
-      // the edges keep detail instead of smearing one row of pixels.
-      uv = abs(mod(uv, 2.0) - 1.0);
-      gl_FragColor = texture2D(uTex, uv);
-    }`,
-
-  // Domain warp: two layers of sine ripple displace the lookup, giving a
-  // slow liquid drift that reads as underwater.
-  Liquid: `
+  // --- Ghost -------------------------------------------------------------
+  // Feedback trails that only the PERSON leaves. Each frame the previous
+  // output is scaled slightly about the centre and faded; the live person is
+  // composited on top. The result is a comet-tail of your own silhouette
+  // through the box, tinted by how old each layer is — motion becomes the
+  // subject rather than a filter sitting on top of it.
+  Ghost: `
     void main() {
       vec2 uv = vUv;
-      float t = uTime * 0.9;
-      uv.x += sin(uv.y * 11.0 + t) * 0.012
-            + sin(uv.y * 23.0 - t * 1.7) * 0.006;
-      uv.y += cos(uv.x * 13.0 - t * 1.2) * 0.012
-            + cos(uv.x * 27.0 + t * 0.9) * 0.005;
-      uv = clamp(uv, 0.0, 1.0);
-      vec3 col = texture2D(uTex, uv).rgb;
-      // Lift the highlights slightly where the warp is strongest, so the
-      // ripples catch light instead of just sliding the image around.
-      float shimmer = sin(uv.y * 40.0 + t * 3.0) * 0.5 + 0.5;
-      col += shimmer * 0.06;
+      // Zoom the history a touch so trails bloom outward instead of stacking
+      // exactly on themselves.
+      vec2 z = (uv - 0.5) * 0.985 + 0.5;
+      vec3 hist = texture2D(uPrev, z).rgb;
+      // Shift trails toward magenta/cyan as they age, so successive echoes
+      // separate by colour instead of turning into grey mush.
+      hist = mix(hist, hist.gbr, 0.16) * 0.935;
+
+      vec3 live = texture2D(uTex, uv).rgb;
+      float p = person(uv);
+      // Rim: strong where the person's coverage changes fastest.
+      vec2 px = 1.0 / uRes;
+      float rim = abs(person(uv + vec2(px.x, 0.0)) - person(uv - vec2(px.x, 0.0)))
+                + abs(person(uv + vec2(0.0, px.y)) - person(uv - vec2(0.0, px.y)));
+      vec3 col = max(hist, live * p);
+      col += vec3(0.35, 0.75, 1.0) * rim * 2.2;      // electric edge
+      // Keep the room visible but pushed back, so the trails read as
+      // happening in a space rather than on a black card.
+      col = mix(texture2D(uTex, uv).rgb * 0.28, col, clamp(luma(col) * 2.2, 0.0, 1.0));
       gl_FragColor = vec4(col, 1.0);
     }`,
 
-  // Radial chromatic dispersion plus a soft vignette: the channels separate
-  // more the further they are from the centre, like a cheap wide lens.
-  Prism: `
+  // --- Dissolve ----------------------------------------------------------
+  // The person disintegrates into drifting embers at the edges. An fbm field
+  // scrolls upward; where it is weak the body erodes into sparks, so you look
+  // like you are burning away from the outline inward.
+  Dissolve: `
     void main() {
-      vec2 c = vUv - 0.5;
-      float r = length(c);
-      float amt = (0.004 + 0.02 * r * r) * (1.0 + 0.35 * sin(uTime * 1.3));
-      vec2 dir = normalize(c + 1e-6);
-      float rr = texture2D(uTex, vUv + dir * amt).r;
-      float gg = texture2D(uTex, vUv).g;
-      float bb = texture2D(uTex, vUv - dir * amt).b;
-      vec3 col = vec3(rr, gg, bb);
-      col *= 1.0 - 0.5 * r * r;                    // vignette
+      vec2 uv = vUv;
+      float p = person(uv);
+      vec3 room = texture2D(uTex, uv).rgb;
+
+      // Advect the sample upward with the noise field, so surviving pixels
+      // smear along the direction the embers travel.
+      float f = fbm(vec2(uv.x * 6.0, uv.y * 6.0 - uTime * 0.55));
+      vec2 warp = uv + vec2(0.0, -0.035) * (1.0 - f) * p;
+      vec3 body = texture2D(uTex, warp).rgb;
+
+      // Erosion threshold rises toward the silhouette edge, so the burn eats
+      // inward from the outline the way real dissolves do.
+      float keep = smoothstep(0.34, 0.72, p * (0.55 + 0.75 * f));
+      float ember = smoothstep(0.30, 0.52, p * (0.55 + 0.75 * f)) - keep;
+
+      vec3 col = mix(room * 0.35, body, keep);
+      // Embers: hot core to deep orange, brightest right at the erosion band.
+      vec3 fire = mix(vec3(1.0, 0.35, 0.06), vec3(1.0, 0.92, 0.62),
+                      clamp(f * 1.7, 0.0, 1.0));
+      col += fire * ember * 2.6;
+      // A few free-floating sparks above the body.
+      float spark = step(0.9975, hash(floor(uv * uRes / 2.5) + floor(uTime * 18.0)));
+      col += fire * spark * smoothstep(0.05, 0.5, p) * 1.4;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+
+  // --- Neon --------------------------------------------------------------
+  // Blueprint / Tron treatment: the image collapses to glowing contour lines
+  // over a dark grid, with the person's silhouette picked out brightest. Uses
+  // the Sobel helper rather than warping pixels, so it reads as a real
+  // rendering of the scene's structure.
+  Neon: `
+    void main() {
+      vec2 uv = vUv;
+      vec2 px = 1.0 / uRes;
+      float e = edge(uv, px);
+      float p = person(uv);
+
+      // Two bands: crisp core line and a wider bloom around it.
+      float core  = smoothstep(0.55, 1.5, e);
+      float bloom = smoothstep(0.12, 1.1, e) * 0.55;
+
+      // Hue rides vertical position and time so the lines feel alive.
+      float h = uv.y * 2.4 + uTime * 0.5;
+      vec3 tint = 0.5 + 0.5 * cos(vec3(0.0, 2.09, 4.19) + h);
+      tint = mix(vec3(0.25, 0.85, 1.0), tint, 0.65);   // bias to cyan
+
+      // Faint perspective-free grid, brighter away from the subject.
+      vec2 g = fract(uv * vec2(26.0, 18.0));
+      float grid = (smoothstep(0.96, 1.0, max(g.x, g.y))) * 0.14 * (1.0 - p * 0.8);
+
+      vec3 col = vec3(0.02, 0.03, 0.06);
+      col += vec3(0.10, 0.35, 0.55) * grid;
+      col += tint * (core * 1.5 + bloom);
+      // Person contours burn hotter than background clutter.
+      col += tint * core * p * 1.3;
+      // Keep a whisper of the real image so faces stay readable.
+      col += texture2D(uTex, uv).rgb * 0.12 * p;
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -1487,11 +1584,45 @@ function glProgram(name) {
   entry = {
     program,
     uTex: gl.getUniformLocation(program, "uTex"),
+    uPrev: gl.getUniformLocation(program, "uPrev"),
+    uMask: gl.getUniformLocation(program, "uMask"),
     uTime: gl.getUniformLocation(program, "uTime"),
     uRes: gl.getUniformLocation(program, "uRes"),
+    uHasMask: gl.getUniformLocation(program, "uHasMask"),
   };
   glPrograms.set(name, entry);
   return entry;
+}
+
+function glMakeTex() {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return tex;
+}
+
+// (Re)allocate the two feedback targets for a w x h box.
+function glEnsureFbo(w, h) {
+  if (glFboSize[0] === w && glFboSize[1] === h && glFbo[0]) return;
+  for (let i = 0; i < 2; i++) {
+    if (glFbo[i]) gl.deleteFramebuffer(glFbo[i]);
+    if (glFboTex[i]) gl.deleteTexture(glFboTex[i]);
+    glFboTex[i] = glMakeTex();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA,
+      gl.UNSIGNED_BYTE, null);
+    glFbo[i] = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glFbo[i]);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D, glFboTex[i], 0);
+    // A fresh target holds garbage; clear so the first feedback read is black.
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  glFboSize = [w, h];
 }
 
 // Runs `name` over the frame's [bx,by,bw,bh] region and draws the result into
@@ -1507,27 +1638,74 @@ function runShader(name, bx, by, bw, bh, t) {
       glCanvas.width = bw;
       glCanvas.height = bh;
     }
+    glEnsureFbo(bw, bh);
+    // Switching effects (or resizing) must not inherit the old effect's
+    // trails, which would show as a ghost of the previous look.
+    if (glPrevName !== name) {
+      for (let i = 0; i < 2; i++) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, glFbo[i]);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      glPrevName = name;
+    }
+
     const p = glProgram(name);
-    gl.viewport(0, 0, bw, bh);
     gl.useProgram(p.program);
 
-    // Upload just the framed crop, not the whole canvas: the texture cost
-    // scales with the box, which is usually a small part of the screen.
+    // Unit 0: this frame's crop.
     const g = sizeScratch(sGlSrc, bw, bh);
     g.drawImage(frame, bx, by, bw, bh, 0, 0, bw, bh);
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, glTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sGlSrc.c);
-
-    gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(p.uTex, 0);
+
+    // Unit 1: last frame's output (feedback).
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, glFboTex[glPing]);
+    gl.uniform1i(p.uPrev, 1);
+
+    // Unit 2: the person mask, cropped to the same box. Only some effects
+    // read it, but binding is cheap and keeps one uniform layout.
+    const hasMask = maskReady && segState === "ready";
+    if (hasMask) {
+      const m = sizeScratch(sGlMask, bw, bh);
+      m.clearRect(0, 0, bw, bh);
+      m.save();
+      m.translate(-bx, -by);
+      m.transform(-fit.s, 0, 0, fit.s, fit.ox + fit.s * fit.vw, fit.oy);
+      m.scale(fit.vw / maskCanvas.width, fit.vh / maskCanvas.height);
+      m.drawImage(maskCanvas, 0, 0);
+      m.restore();
+      if (!glMaskTex) glMaskTex = glMakeTex();
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, glMaskTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sGlMask.c);
+      gl.uniform1i(p.uMask, 2);
+    }
+    gl.uniform1f(p.uHasMask, hasMask ? 1 : 0);
+
     gl.uniform1f(p.uTime, t / 1000);
     gl.uniform2f(p.uRes, bw, bh);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    // Pass 1: render into the *other* target, which becomes next frame's
+    // history. Pass 2: the same draw to the visible canvas.
+    const dst = 1 - glPing;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glFbo[dst]);
+    gl.viewport(0, 0, bw, bh);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, bw, bh);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    glPing = dst;
 
     ctx.drawImage(glCanvas, bx, by);
   } catch (err) {
@@ -1537,13 +1715,13 @@ function runShader(name, bx, by, bw, bh, t) {
   }
 }
 
-function fxKaleido(bx, by, bw, bh, t) { runShader("Kaleido", bx, by, bw, bh, t); }
-function fxLiquid(bx, by, bw, bh, t)  { runShader("Liquid",  bx, by, bw, bh, t); }
-function fxPrism(bx, by, bw, bh, t)   { runShader("Prism",   bx, by, bw, bh, t); }
+function fxGhost(bx, by, bw, bh, t)    { runShader("Ghost",    bx, by, bw, bh, t); }
+function fxDissolve(bx, by, bw, bh, t) { runShader("Dissolve", bx, by, bw, bh, t); }
+function fxNeon(bx, by, bw, bh, t)     { runShader("Neon",     bx, by, bw, bh, t); }
 
 const EFFECT_FNS = [fxPixelate, fxBlur, fxInvert, fxNoir, fxGlitch, fxToon,
                     fxVanGogh, fxAnime, fxMatrix, fxPortal,
-                    fxKaleido, fxLiquid, fxPrism];
+                    fxGhost, fxDissolve, fxNeon];
 
 // ---------------------------------------------------------------------------
 // Frame overlay: corner brackets so the frame reads as a "camera"
@@ -1636,7 +1814,9 @@ function tick(t) {
       }
       // Only segment when an effect actually needs the person mask.
       const fxName = EFFECTS[effectIndex];
-      const wantsMask = fxName === "Portal" || (fxName === "Matrix" && keepPerson);
+      const wantsMask = fxName === "Portal" || fxName === "Ghost" ||
+        fxName === "Dissolve" || fxName === "Neon" ||
+        (fxName === "Matrix" && keepPerson);
       if (wantsMask && segState === "ready") {
         segmenter.segmentForVideo(video, t, writeMask);
       }

@@ -39,19 +39,28 @@ Matrix rain behind you. They combine with `?demo`.
 | 8 | Anime — press again to cycle styles (Hayao / Shinkai / Ghibli / Sketch) |
 | 9 | Matrix |
 | 0 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
-| q | Kaleido — GPU shader: mirrored wedges rotating around the frame |
-| w | Liquid — GPU shader: rippling underwater warp |
-| e | Prism — GPU shader: radial chromatic dispersion + vignette |
+| q | Ghost — GPU shader: your silhouette leaves colour-shifted comet trails |
+| w | Dissolve — GPU shader: you burn away into drifting embers |
+| e | Neon — GPU shader: the scene collapses to glowing blueprint contours |
 
 Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
 Matrix rain falls in front of you or behind.
 
 ### GPU shader effects
 
-`q` / `w` / `e` run WebGL fragment shaders over the framed region — per-pixel
-work (angular folding, domain warping, channel dispersion) that the Canvas 2D
-effects can't afford. They render offscreen and hand the result back to the
-same clip path, so tracking and framing are untouched.
+`q` / `w` / `e` run WebGL fragment shaders over the framed region. They get
+three inputs a plain filter doesn't have: the current crop, **the previous
+frame's output** (so an effect can accumulate over time), and **the person
+segmentation mask** (so it can treat you differently from the room). That is
+what separates them from stock shader-toy filters — Ghost's trails follow
+your silhouette, Dissolve erodes inward from your outline, and Neon burns
+your contours hotter than background clutter.
+
+Feedback means the shader can't draw straight to the screen, so it
+ping-pongs between two framebuffers: read last frame's texture, write to the
+other, then repeat the draw to the visible canvas. History is cleared when
+the effect or the box size changes, or an old effect's trails would bleed
+into the new one.
 
 One GL context is shared by all three and the programs compile once, since
 browsers drop the oldest context when a page opens too many. If WebGL is

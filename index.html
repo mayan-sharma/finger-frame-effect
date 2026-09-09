@@ -58,6 +58,10 @@
   <div id="status">Loading hand tracker…</div>
   <div id="badge">demo mode</div>
   <div id="hint"></div>
-  <script type="module" src="main.js"></script>
+  <!-- Cache-bust on every load: without this the browser keeps serving a
+       stale main.js after an edit, which silently hides new effects. -->
+  <script type="module">
+    import("./main.js?v=" + Date.now());
+  </script>
 </body>
 </html>
