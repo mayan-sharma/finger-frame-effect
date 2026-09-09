@@ -60,7 +60,7 @@ const TOON_W = 320;              // toon working width
 
 const EFFECTS = ["Pixelate", "Blur", "Invert", "Noir", "Glitch", "Toon",
                  "Van Gogh", "Anime", "Matrix", "Portal",
-                 "Ghost", "Dissolve", "Neon"];
+                 "Inferno", "Shatter", "Aurora"];
 // Effects 1-10 are the number row (0 is the tenth); the GPU shaders past that
 // take letters. Single source of truth for the chips and the key handler.
 const EFFECT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
@@ -265,7 +265,7 @@ function setEffect(i) {
   if (name === "Anime") ensureAnime();
   // The shader effects key off the person mask; without it they still render
   // (person() returns 1) but lose the body-aware behaviour that is the point.
-  const MASK_FX = ["Portal", "Ghost", "Dissolve", "Neon"];
+  const MASK_FX = ["Portal", "Inferno", "Shatter", "Aurora"];
   if (MASK_FX.includes(name) || (name === "Matrix" && keepPerson)) ensureSegmenter();
 }
 buildHint();
@@ -1357,7 +1357,9 @@ let glFboTex = [null, null];
 let glFboSize = [0, 0];
 let glPing = 0;
 let glMaskTex = null;
+let glCamPrevTex = null;          // last frame's camera crop, for motion
 let glPrevName = null;            // clears history when the effect changes
+let glLastT = 0;                  // for the shader's dt
 
 const GL_VERT = `
 attribute vec2 aPos;
@@ -1373,9 +1375,11 @@ const GL_FRAG_HEAD = `
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D uTex;    // this frame's crop
-uniform sampler2D uPrev;   // last frame's OUTPUT — enables feedback / trails
+uniform sampler2D uPrev;   // last frame's OUTPUT — feedback / simulation state
+uniform sampler2D uCamPrev;// last frame's CAMERA crop — gives motion
 uniform sampler2D uMask;   // person confidence in .a (1 = person), if loaded
 uniform float uTime;
+uniform float uDt;
 uniform vec2 uRes;
 uniform float uHasMask;
 
@@ -1404,6 +1408,15 @@ float person(vec2 uv) {
   return texture2D(uMask, uv).a;
 }
 
+// How much this pixel changed since last frame. This is the whole reason the
+// simulations feel alive: they are driven by what YOU actually moved, not by
+// a clock. Compared on luma so a lighting flicker does not read as motion.
+float motion(vec2 uv) {
+  float a = luma(texture2D(uTex, uv).rgb);
+  float b = luma(texture2D(uCamPrev, uv).rgb);
+  return abs(a - b);
+}
+
 // Sobel edge magnitude on luma — the silhouette and interior contours.
 float edge(vec2 uv, vec2 px) {
   float tl = luma(texture2D(uTex, uv + px * vec2(-1, -1)).rgb);
@@ -1421,102 +1434,168 @@ float edge(vec2 uv, vec2 px) {
 `;
 
 const GL_SHADERS = {
-  // --- Ghost -------------------------------------------------------------
-  // Feedback trails that only the PERSON leaves. Each frame the previous
-  // output is scaled slightly about the centre and faded; the live person is
-  // composited on top. The result is a comet-tail of your own silhouette
-  // through the box, tinted by how old each layer is — motion becomes the
-  // subject rather than a filter sitting on top of it.
-  Ghost: `
+  // --- Inferno -----------------------------------------------------------
+  // A real fluid-ish fire simulation, not a fire texture. The feedback buffer
+  // IS the heat field: each frame heat advects upward, diffuses into its
+  // neighbours, cools, and gets new fuel injected wherever YOU moved. Wave a
+  // hand and you inject heat that then rises and curls on its own — the flame
+  // outlives the gesture because it is state, not a lookup.
+  Inferno: `
     void main() {
       vec2 uv = vUv;
-      // Zoom the history a touch so trails bloom outward instead of stacking
-      // exactly on themselves.
-      vec2 z = (uv - 0.5) * 0.985 + 0.5;
-      vec3 hist = texture2D(uPrev, z).rgb;
-      // Shift trails toward magenta/cyan as they age, so successive echoes
-      // separate by colour instead of turning into grey mush.
-      hist = mix(hist, hist.gbr, 0.16) * 0.935;
-
-      vec3 live = texture2D(uTex, uv).rgb;
-      float p = person(uv);
-      // Rim: strong where the person's coverage changes fastest.
       vec2 px = 1.0 / uRes;
-      float rim = abs(person(uv + vec2(px.x, 0.0)) - person(uv - vec2(px.x, 0.0)))
-                + abs(person(uv + vec2(0.0, px.y)) - person(uv - vec2(0.0, px.y)));
-      vec3 col = max(hist, live * p);
-      col += vec3(0.35, 0.75, 1.0) * rim * 2.2;      // electric edge
-      // Keep the room visible but pushed back, so the trails read as
-      // happening in a space rather than on a black card.
-      col = mix(texture2D(uTex, uv).rgb * 0.28, col, clamp(luma(col) * 2.2, 0.0, 1.0));
-      gl_FragColor = vec4(col, 1.0);
-    }`,
 
-  // --- Dissolve ----------------------------------------------------------
-  // The person disintegrates into drifting embers at the edges. An fbm field
-  // scrolls upward; where it is weak the body erodes into sparks, so you look
-  // like you are burning away from the outline inward.
-  Dissolve: `
-    void main() {
-      vec2 uv = vUv;
+      // Advect: sample the heat field slightly BELOW, so the whole field
+      // marches upward every frame. Curl the sample sideways with noise so
+      // the column breaks up into tongues instead of a straight bar.
+      float sway = (fbm(vec2(uv.x * 5.0, uv.y * 4.0 - uTime * 1.1)) - 0.5);
+      vec2 src = uv + vec2(sway * 2.6 * px.x * 6.0, px.y * 2.3);
+
+      // Diffuse while advecting: a 4-tap blur is enough to keep the field
+      // smooth without a separate pass.
+      float h = texture2D(uPrev, src).r * 0.4
+              + texture2D(uPrev, src + vec2(px.x, 0.0)).r * 0.15
+              + texture2D(uPrev, src - vec2(px.x, 0.0)).r * 0.15
+              + texture2D(uPrev, src + vec2(0.0, px.y)).r * 0.15
+              + texture2D(uPrev, src - vec2(0.0, px.y)).r * 0.15;
+
+      // Cool faster near the top so flames die out rather than filling the box.
+      h *= 0.955 - 0.055 * (1.0 - uv.y);
+
+      // Fuel injection: motion is the igniter, and the body's lower edge
+      // smoulders so you are always alight even when still.
+      float mv = motion(uv);
       float p = person(uv);
+      float below = person(uv + vec2(0.0, px.y * 3.0));
+      float rim = clamp(p - below, 0.0, 1.0);       // bottom edge of the body
+      h += smoothstep(0.05, 0.35, mv) * 0.85;
+      h += rim * 0.5;
+      h = clamp(h, 0.0, 1.4);
+
+      // Colour ramp: black -> blood -> orange -> white hot.
+      vec3 fire = vec3(0.0);
+      fire += vec3(0.85, 0.13, 0.03) * smoothstep(0.10, 0.45, h);
+      fire += vec3(0.85, 0.55, 0.05) * smoothstep(0.35, 0.80, h);
+      fire += vec3(0.6, 0.75, 0.9) * smoothstep(0.85, 1.25, h);
+
+      // Show the room dim and cold underneath, lit by the fire it casts.
       vec3 room = texture2D(uTex, uv).rgb;
-
-      // Advect the sample upward with the noise field, so surviving pixels
-      // smear along the direction the embers travel.
-      float f = fbm(vec2(uv.x * 6.0, uv.y * 6.0 - uTime * 0.55));
-      vec2 warp = uv + vec2(0.0, -0.035) * (1.0 - f) * p;
-      vec3 body = texture2D(uTex, warp).rgb;
-
-      // Erosion threshold rises toward the silhouette edge, so the burn eats
-      // inward from the outline the way real dissolves do.
-      float keep = smoothstep(0.34, 0.72, p * (0.55 + 0.75 * f));
-      float ember = smoothstep(0.30, 0.52, p * (0.55 + 0.75 * f)) - keep;
-
-      vec3 col = mix(room * 0.35, body, keep);
-      // Embers: hot core to deep orange, brightest right at the erosion band.
-      vec3 fire = mix(vec3(1.0, 0.35, 0.06), vec3(1.0, 0.92, 0.62),
-                      clamp(f * 1.7, 0.0, 1.0));
-      col += fire * ember * 2.6;
-      // A few free-floating sparks above the body.
-      float spark = step(0.9975, hash(floor(uv * uRes / 2.5) + floor(uTime * 18.0)));
-      col += fire * spark * smoothstep(0.05, 0.5, p) * 1.4;
-      gl_FragColor = vec4(col, 1.0);
+      vec3 col = room * (0.20 + 0.9 * h) + fire;
+      // Store heat in .r so the next frame can read it back.
+      gl_FragColor = vec4(max(col.r, h), col.g, col.b, 1.0);
     }`,
 
-  // --- Neon --------------------------------------------------------------
-  // Blueprint / Tron treatment: the image collapses to glowing contour lines
-  // over a dark grid, with the person's silhouette picked out brightest. Uses
-  // the Sobel helper rather than warping pixels, so it reads as a real
-  // rendering of the scene's structure.
-  Neon: `
+  // --- Shatter -----------------------------------------------------------
+  // The frame is a sheet of glass that cracks where you move and the shards
+  // drift apart. A Voronoi cellular decomposition gives each shard its own
+  // centre; each cell then samples the image displaced along its own outward
+  // velocity, so the picture separates into pieces that float and rotate
+  // independently, with lit bevels along every fracture.
+  Shatter: `
+    // Voronoi returning: .xy offset to cell centre, .z distance to the
+    // nearest EDGE (used for the bevel), .w a per-cell random id.
+    vec4 voronoi(vec2 p) {
+      vec2 n = floor(p), f = fract(p);
+      vec2 mg, mr; float md = 8.0, id = 0.0;
+      for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(float(i), float(j));
+        vec2 o = vec2(hash(n + g), hash(n + g + 17.3));
+        vec2 r = g + o - f;
+        float d = dot(r, r);
+        if (d < md) { md = d; mr = r; mg = g; id = hash(n + g + 3.7); }
+      }
+      // Second pass for the true edge distance, which a nearest-centre
+      // distance alone cannot give — this is what makes the cracks crisp.
+      float me = 8.0;
+      for (int j = -2; j <= 2; j++)
+      for (int i = -2; i <= 2; i++) {
+        vec2 g = mg + vec2(float(i), float(j));
+        vec2 o = vec2(hash(n + g), hash(n + g + 17.3));
+        vec2 r = g + o - f;
+        if (dot(mr - r, mr - r) > 0.00001)
+          me = min(me, dot(0.5 * (mr + r), normalize(r - mr)));
+      }
+      return vec4(mr, me, id);
+    }
+
+    void main() {
+      vec2 uv = vUv;
+      float asp = uRes.x / uRes.y;
+      vec2 sp = vec2(uv.x * asp, uv.y) * 9.0;
+      vec4 v = voronoi(sp);
+
+      // Break energy accumulates from motion and decays slowly, so a single
+      // swipe shatters the glass and it then drifts for a second or two.
+      float mv = smoothstep(0.06, 0.30, motion(uv));
+      float energy = max(texture2D(uPrev, uv).a * 0.94, mv);
+
+      // Each shard flies outward from the frame centre on its own heading,
+      // scaled by its random id so they separate rather than move as one.
+      vec2 dir = normalize(uv - 0.5 + 1e-5);
+      float spin = (v.w - 0.5) * 2.0;
+      vec2 off = (dir * (0.6 + v.w) + vec2(-dir.y, dir.x) * spin * 0.5)
+                 * energy * 0.09;
+      vec2 suv = clamp(uv + off, 0.001, 0.999);
+      vec3 col = texture2D(uTex, suv).rgb;
+
+      // Fracture lines: dark gap plus a bright bevel highlight on one side,
+      // which is what sells it as thick glass rather than a painted crack.
+      float crack = smoothstep(0.045, 0.0, v.z);
+      float bevel = smoothstep(0.16, 0.02, v.z) - crack;
+      col = mix(col, vec3(0.02, 0.03, 0.05), crack * energy);
+      col += vec3(0.55, 0.75, 1.0) * bevel * energy * 0.55;
+      // Fresnel-ish tint per shard so pieces catch different light.
+      col *= 1.0 + (v.w - 0.5) * 0.45 * energy;
+
+      gl_FragColor = vec4(col, energy);   // .a carries energy to next frame
+    }`,
+
+  // --- Aurora ------------------------------------------------------------
+  // A particle-free reaction field: your silhouette emits a signal that
+  // propagates outward through the buffer each frame and interferes with
+  // itself, producing rippling aurora sheets that bend around your body.
+  // Because it is a propagating field, ripples keep travelling after you
+  // stop — the box has a memory of where you were.
+  Aurora: `
     void main() {
       vec2 uv = vUv;
       vec2 px = 1.0 / uRes;
-      float e = edge(uv, px);
       float p = person(uv);
 
-      // Two bands: crisp core line and a wider bloom around it.
-      float core  = smoothstep(0.55, 1.5, e);
-      float bloom = smoothstep(0.12, 1.1, e) * 0.55;
+      // Propagate: average the neighbourhood of the previous field and let it
+      // expand slightly. This is a crude wave step — enough for travelling
+      // ripples without a second state texture.
+      vec2 c = uv - 0.5;
+      vec2 out_ = uv + normalize(c + 1e-5) * px * 1.6;
+      float f = texture2D(uPrev, out_).g * 0.36
+              + texture2D(uPrev, out_ + vec2(px.x, 0.0) * 1.6).g * 0.16
+              + texture2D(uPrev, out_ - vec2(px.x, 0.0) * 1.6).g * 0.16
+              + texture2D(uPrev, out_ + vec2(0.0, px.y) * 1.6).g * 0.16
+              + texture2D(uPrev, out_ - vec2(0.0, px.y) * 1.6).g * 0.16;
+      f *= 0.975;
 
-      // Hue rides vertical position and time so the lines feel alive.
-      float h = uv.y * 2.4 + uTime * 0.5;
-      vec3 tint = 0.5 + 0.5 * cos(vec3(0.0, 2.09, 4.19) + h);
-      tint = mix(vec3(0.25, 0.85, 1.0), tint, 0.65);   // bias to cyan
+      // Emit from the silhouette edge, harder where you are moving.
+      float rimx = abs(person(uv + vec2(px.x, 0.0) * 2.0) - person(uv - vec2(px.x, 0.0) * 2.0));
+      float rimy = abs(person(uv + vec2(0.0, px.y) * 2.0) - person(uv - vec2(0.0, px.y) * 2.0));
+      float rim = clamp((rimx + rimy) * 1.5, 0.0, 1.0);
+      f = max(f, rim * (0.45 + 1.5 * smoothstep(0.03, 0.25, motion(uv))));
+      f = clamp(f, 0.0, 1.0);
 
-      // Faint perspective-free grid, brighter away from the subject.
-      vec2 g = fract(uv * vec2(26.0, 18.0));
-      float grid = (smoothstep(0.96, 1.0, max(g.x, g.y))) * 0.14 * (1.0 - p * 0.8);
+      // Fold the field through sine bands so it reads as layered curtains
+      // rather than a smooth glow.
+      float bands = sin(f * 22.0 - uTime * 2.2 + fbm(uv * 3.0 + uTime * 0.15) * 4.0);
+      float sheet = pow(clamp(bands * 0.5 + 0.5, 0.0, 1.0), 3.0) * f;
 
-      vec3 col = vec3(0.02, 0.03, 0.06);
-      col += vec3(0.10, 0.35, 0.55) * grid;
-      col += tint * (core * 1.5 + bloom);
-      // Person contours burn hotter than background clutter.
-      col += tint * core * p * 1.3;
-      // Keep a whisper of the real image so faces stay readable.
-      col += texture2D(uTex, uv).rgb * 0.12 * p;
-      gl_FragColor = vec4(col, 1.0);
+      // Aurora palette: green core, magenta fringe, cyan tips.
+      vec3 col = vec3(0.10, 1.0, 0.55) * sheet * 1.5;
+      col += vec3(0.85, 0.25, 1.0) * pow(f, 3.0) * 0.9;
+      col += vec3(0.35, 0.85, 1.0) * pow(sheet, 6.0) * 1.2;
+
+      // You stay visible, slightly cooled, standing inside the light.
+      vec3 room = texture2D(uTex, uv).rgb;
+      col += room * mix(0.22, 0.85, p);
+      gl_FragColor = vec4(col.r, f, col.b, 1.0);   // .g carries the field
     }`,
 };
 
@@ -1585,6 +1664,8 @@ function glProgram(name) {
     program,
     uTex: gl.getUniformLocation(program, "uTex"),
     uPrev: gl.getUniformLocation(program, "uPrev"),
+    uCamPrev: gl.getUniformLocation(program, "uCamPrev"),
+    uDt: gl.getUniformLocation(program, "uDt"),
     uMask: gl.getUniformLocation(program, "uMask"),
     uTime: gl.getUniformLocation(program, "uTime"),
     uRes: gl.getUniformLocation(program, "uRes"),
@@ -1688,7 +1769,15 @@ function runShader(name, bx, by, bw, bh, t) {
     }
     gl.uniform1f(p.uHasMask, hasMask ? 1 : 0);
 
+    // Unit 3: last frame's camera crop, so shaders can measure motion.
+    if (!glCamPrevTex) glCamPrevTex = glMakeTex();
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, glCamPrevTex);
+    gl.uniform1i(p.uCamPrev, 3);
+
     gl.uniform1f(p.uTime, t / 1000);
+    gl.uniform1f(p.uDt, Math.min(0.05, Math.max(0.001, (t - glLastT) / 1000)));
+    glLastT = t;
     gl.uniform2f(p.uRes, bw, bh);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, glQuadBuf);
@@ -1707,6 +1796,13 @@ function runShader(name, bx, by, bw, bh, t) {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     glPing = dst;
 
+    // Keep this frame's camera crop for the next frame's motion term. Done
+    // after drawing so the shader saw the *previous* one.
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, glCamPrevTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sGlSrc.c);
+
     ctx.drawImage(glCanvas, bx, by);
   } catch (err) {
     console.warn(`Shader ${name} failed:`, err);
@@ -1715,13 +1811,13 @@ function runShader(name, bx, by, bw, bh, t) {
   }
 }
 
-function fxGhost(bx, by, bw, bh, t)    { runShader("Ghost",    bx, by, bw, bh, t); }
-function fxDissolve(bx, by, bw, bh, t) { runShader("Dissolve", bx, by, bw, bh, t); }
-function fxNeon(bx, by, bw, bh, t)     { runShader("Neon",     bx, by, bw, bh, t); }
+function fxInferno(bx, by, bw, bh, t) { runShader("Inferno", bx, by, bw, bh, t); }
+function fxShatter(bx, by, bw, bh, t) { runShader("Shatter", bx, by, bw, bh, t); }
+function fxAurora(bx, by, bw, bh, t)  { runShader("Aurora",  bx, by, bw, bh, t); }
 
 const EFFECT_FNS = [fxPixelate, fxBlur, fxInvert, fxNoir, fxGlitch, fxToon,
                     fxVanGogh, fxAnime, fxMatrix, fxPortal,
-                    fxGhost, fxDissolve, fxNeon];
+                    fxInferno, fxShatter, fxAurora];
 
 // ---------------------------------------------------------------------------
 // Frame overlay: corner brackets so the frame reads as a "camera"
@@ -1814,8 +1910,8 @@ function tick(t) {
       }
       // Only segment when an effect actually needs the person mask.
       const fxName = EFFECTS[effectIndex];
-      const wantsMask = fxName === "Portal" || fxName === "Ghost" ||
-        fxName === "Dissolve" || fxName === "Neon" ||
+      const wantsMask = fxName === "Portal" || fxName === "Inferno" ||
+        fxName === "Shatter" || fxName === "Aurora" ||
         (fxName === "Matrix" && keepPerson);
       if (wantsMask && segState === "ready") {
         segmenter.segmentForVideo(video, t, writeMask);

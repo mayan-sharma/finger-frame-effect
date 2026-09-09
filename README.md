@@ -39,22 +39,33 @@ Matrix rain behind you. They combine with `?demo`.
 | 8 | Anime — press again to cycle styles (Hayao / Shinkai / Ghibli / Sketch) |
 | 9 | Matrix |
 | 0 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
-| q | Ghost — GPU shader: your silhouette leaves colour-shifted comet trails |
-| w | Dissolve — GPU shader: you burn away into drifting embers |
-| e | Neon — GPU shader: the scene collapses to glowing blueprint contours |
+| q | Inferno — heat simulation: your movement ignites fire that rises and curls |
+| w | Shatter — the frame cracks into Voronoi glass shards that drift apart |
+| e | Aurora — your silhouette emits waves that ripple outward as light curtains |
 
 Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
 Matrix rain falls in front of you or behind.
 
 ### GPU shader effects
 
-`q` / `w` / `e` run WebGL fragment shaders over the framed region. They get
-three inputs a plain filter doesn't have: the current crop, **the previous
-frame's output** (so an effect can accumulate over time), and **the person
-segmentation mask** (so it can treat you differently from the room). That is
-what separates them from stock shader-toy filters — Ghost's trails follow
-your silhouette, Dissolve erodes inward from your outline, and Neon burns
-your contours hotter than background clutter.
+`q` / `w` / `e` are **simulations**, not filters. A filter maps this frame's
+pixels to output; these carry state forward and evolve it, which is why they
+keep moving after you stop.
+
+They get four inputs: the current crop, **the previous frame's output** (used
+as a state field, not just for trails), **the previous camera frame** (so they
+can measure what actually moved), and **the person mask**.
+
+- **Inferno** treats the feedback buffer as a heat field. Every frame heat
+  advects upward, diffuses into neighbours, and cools; your motion injects
+  fuel. Wave a hand and the flame outlives the gesture because it's state.
+- **Shatter** builds a Voronoi cell decomposition with a second pass for true
+  edge distance (which is what makes the cracks crisp rather than blobby).
+  Each shard flies out on its own heading with a lit bevel; break energy
+  accumulates from motion and decays, so one swipe shatters and then drifts.
+- **Aurora** propagates a wave field outward from your silhouette each frame
+  and folds it through sine bands into curtains. Ripples keep travelling after
+  you move away — the box remembers where you were.
 
 Feedback means the shader can't draw straight to the screen, so it
 ping-pongs between two framebuffers: read last frame's texture, write to the
