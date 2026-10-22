@@ -1,0 +1,29 @@
+src/effects/ascii-cam.js
+  c8737bee62f7c1bc 1-31,33-60,64-126
+src/api.js
+  c8737bee62f7c1bc 93-104
+src/lib/sound.js
+  c8737bee62f7c1bc 1-299
+src/effects/rubber-arm.js
+  c8737bee62f7c1bc 1-12,15-178,208-215,217-229,233-237,239,243,250-251,260-261,265-267,269,271-272,281-282,284-357,359-372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "0989c3153eda50d1aec90c128cf561fccd42e087",
+  "prompts": {
+    "c8737bee62f7c1bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "207d9a8e-3758-4733-a51b-0e185ca01eb3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "mayan.sharma@1mg.com",
+      "messages": [],
+      "total_additions": 780,
+      "total_deletions": 0,
+      "accepted_lines": 737,
+      "overriden_lines": 20
+    }
+  }
+}
