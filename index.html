@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Finger Frame Effect</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖐️</text></svg>">
 <style>
   :root { color-scheme: dark; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -73,7 +74,7 @@
   #knobs .bar.punch i { background: #ffc46b; }
 
   #badge {
-    position: fixed; top: 18px; right: 18px;
+    position: fixed; top: 18px; right: 62px;
     padding: 5px 11px; border-radius: 999px;
     background: rgba(255, 170, 60, 0.15); color: #ffc46b;
     border: 1px solid rgba(255, 170, 60, 0.35);
@@ -81,6 +82,14 @@
     display: none;
   }
   #badge.show { display: block; }
+
+  #sound {
+    position: fixed; right: 18px; top: 14px;
+    width: 34px; height: 34px; border-radius: 12px; cursor: pointer;
+    background: rgba(10, 12, 16, 0.65); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08); color: #e8ecf1; font-size: 16px;
+  }
+  #sound:hover { background: rgba(30, 34, 40, 0.8); }
 </style>
 </head>
 <body>
@@ -90,6 +99,7 @@
   <div id="badge">demo mode</div>
   <div id="knobs" class="hidden"></div>
   <div id="hint"></div>
+  <button id="sound" type="button" title="Sound (m)" aria-label="Mute sound">🔊</button>
   <script>
     // A broken effect (a typo, a bad defineEffect) shows up on the page, not
     // only in the console.

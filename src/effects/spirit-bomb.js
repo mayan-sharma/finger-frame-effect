@@ -7,8 +7,9 @@
 // floods back. Lower your hands slowly instead and it fizzles.
 
 import { canvas, clamp01, ctx, defineEffect, demoBlob, dist, frame, gagClock,
-  jpFont, KAME_PUSH, latinFont, MIDDLE_MCP, openCount, palmCentre,
-  shakeScreen, smoothstep, spill, titleCardAt, trackedHands, unit, WRIST } from "../api.js";
+  hum, jpFont, KAME_PUSH, latinFont, MIDDLE_MCP, openCount, palmCentre,
+  playSound, shakeScreen, smoothstep, spill, titleCardAt, trackedHands, unit,
+  WRIST } from "../api.js";
 
 // Spirit Bomb: both open hands with palm centres above BOMB_RAISE of the
 // screen height charge it. After BOMB_MIN_S, hands thrown down faster than
@@ -68,6 +69,7 @@ function throwBomb() {
   bomb.shot = { age: 0, x: bomb.x, y: bomb.y, r: bomb.r, power: clamp01(bomb.charge / BOMB_FULL_S) };
   bomb.charge = 0;
   bomb.hist.length = 0;
+  playSound("whoosh", { duration: BOMB_FLY_S, pitch: 0.6 });
 }
 
 function renderBomb(t) {
@@ -82,6 +84,7 @@ function renderBomb(t) {
   }
   bomb.title += dt;
   const k = clamp01(bomb.charge / BOMB_FULL_S);
+  hum("charge", s ? 0 : k, 0.6);
 
   // How dark the room is: the charge, or after a throw, the light flooding
   // back in once the bomb has landed.
@@ -152,7 +155,11 @@ function renderBomb(t) {
     const x = s.x + (W / 2 - s.x) * e, y = s.y + (H * 0.62 - s.y) * e;
     if (f < 1) drawBombSphere(x, y, s.r * (1 + 3.5 * e), t, 1);
     else {
-      if (!s.hit) { s.hit = true; shakeScreen(H * 0.04 * (0.5 + s.power)); }
+      if (!s.hit) {
+        s.hit = true;
+        shakeScreen(H * 0.04 * (0.5 + s.power));
+        playSound("boom", { duration: 2, volume: 0.6 + 0.4 * s.power });
+      }
       const a = s.age - BOMB_FLY_S;
       ctx.fillStyle = `rgba(235,245,255,${Math.max(0, 1 - a / 0.9)})`;
       ctx.fillRect(0, 0, W, H);

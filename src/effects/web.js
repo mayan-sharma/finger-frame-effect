@@ -2,8 +2,8 @@
 
 import { canvas, clamp, clamp01, ctx, defineEffect, demoBlob, dist,
   drawSparks, fingerDown, fingerUp, frame, gagClock, INDEX_MCP, lerpPt,
-  MIDDLE_MCP, PINKY_MCP, rayToEdge, RING_MCP, smoothstep, stepSparks,
-  trackedHands, unit, WRIST } from "../api.js";
+  MIDDLE_MCP, PINKY_MCP, playSound, rayToEdge, RING_MCP, smoothstep,
+  stepSparks, trackedHands, unit, WRIST } from "../api.js";
 
 // Web: index + pinky up, middle + ring folded. Each new thwip shoots.
 const WEB_COOLDOWN_S = 0.35;
@@ -73,6 +73,7 @@ function shootWeb(key, st) {
     rot: Math.random() * Math.PI * 2,
   });
   while (webs.lines.length > WEB_MAX) webs.lines.shift();
+  playSound("thwip", { pan: st.x });
 }
 
 // Spokes of slightly random angle and length, joined by rings that sag

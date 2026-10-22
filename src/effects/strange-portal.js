@@ -9,8 +9,9 @@
 
 import { addSpark, canvas, clamp, clamp01, ctx, defineEffect, demoBlob,
   drawSparks, fingerDown, fingerUp, flashStatus, frame, gagClock, INDEX_MCP,
-  INDEX_TIP, makeScratch, PINKY_MCP, PORTAL_SCENE_FNS, PORTAL_SCENES,
-  RING_MCP, shakeScreen, sizeScratch, spill, stepSparks, trackedHands, unit } from "../api.js";
+  INDEX_TIP, makeScratch, PINKY_MCP, playSound, PORTAL_SCENE_FNS,
+  PORTAL_SCENES, RING_MCP, shakeScreen, sizeScratch, spill, stepSparks,
+  trackedHands, unit } from "../api.js";
 
 // Strange Portal: index up (ring + pinky curled) draws. A stretch of the
 // fingertip's trail that sweeps STRANGE_SWEEP radians round its own centroid,
@@ -101,6 +102,7 @@ function castPortal(x, y, r, dir) {
   if (open) {
     open.closing = true;
     open.closeAge = 0;
+    playSound("crackle", { pan: open.x });
     // Drawn over the open one: that was a close, not a new portal.
     if (Math.hypot(x - open.x, y - open.y) < open.R) return;
   }
@@ -110,6 +112,8 @@ function castPortal(x, y, r, dir) {
                          closing: false, closeAge: 0, world, spin: dir || 1 });
   flashStatus(`Portal → ${STRANGE_WORLDS[world]}`);
   shakeScreen(H * 0.004);
+  playSound("shimmer", { pan: x });
+  playSound("crackle", { pan: x, duration: 0.8 });
 }
 
 // The room, sliced into eight wedges round the portal's centre, every other

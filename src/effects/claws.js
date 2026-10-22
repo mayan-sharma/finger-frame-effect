@@ -2,8 +2,8 @@
 
 import { addSpark, ageOut, canvas, clamp, comicPops, ctx, d3, defineEffect,
   DEMO_SKIN, dist, drawPops, drawSparks, fctx, fingerDown, frame, gagClock,
-  INDEX_MCP, lerpPt, MIDDLE_MCP, PINKY_MCP, POP_S, RING_MCP, shakeScreen,
-  smoothstep, spill, stepSparks, trackedHands, WRIST } from "../api.js";
+  INDEX_MCP, lerpPt, MIDDLE_MCP, PINKY_MCP, playSound, POP_S, RING_MCP,
+  shakeScreen, smoothstep, spill, stepSparks, trackedHands, WRIST } from "../api.js";
 
 // Claws: a fist pops three from between the knuckles. Swing it with the tips
 // moving faster than SLASH_SPEED palm lengths a second and they slash.
@@ -99,6 +99,7 @@ function snikt(c) {
     }
   }
   shakeScreen(c.scale * 0.002);
+  playSound("snikt", { pan: r.x });
 }
 
 // Three gashes, each from where a claw tip was to where it is now, pushed
@@ -123,6 +124,7 @@ function addSlash(from, to, w) {
   }
   while (slashes.length > SLASH_MAX) slashes.shift();
   shakeScreen(w * 0.6);
+  playSound("slash", { pan: to[1].x });
 }
 
 // A gash: a lens-shaped tear, dark inside, with a bright lip along one side

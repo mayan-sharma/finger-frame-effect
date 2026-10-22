@@ -9,8 +9,8 @@
 import { addSpark, canvas, clamp01, ctx, defineEffect, demoPerson, drawSparks,
   drawVoidPerson, fingerDown, fingerUp, flashStatus, frame, gagClock,
   INDEX_MCP, INDEX_TIP, jpFont, latinFont, lerpPt, makeScratch, maskAvailable,
-  MIDDLE_MCP, PINKY_MCP, RING_MCP, shakeScreen, sizeScratch, smoothstep,
-  spill, stepSparks, titleCardAt, trackedHands } from "../api.js";
+  MIDDLE_MCP, PINKY_MCP, playSound, RING_MCP, shakeScreen, sizeScratch,
+  smoothstep, spill, stepSparks, titleCardAt, trackedHands } from "../api.js";
 
 // Infinite Void: index + middle up and crossed (or pressed together), ring +
 // pinky curled, held for VOID_HOLD_S. Crossing is crossAmount() falling
@@ -87,6 +87,7 @@ function toggleVoid(x, y) {
              0.2 + Math.random() * 0.4, 0, i % 2 ? "#ffffff" : "#8fc4ff");
   }
   shakeScreen(canvas.height * 0.01);
+  playSound("boom", { pan: x, pitch: voidFx.phase === "opening" ? 1 : 1.4 });
 }
 
 // Stars in 3D, flying at the viewer out of the black sun.

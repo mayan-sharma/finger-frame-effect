@@ -66,9 +66,9 @@ export function defineEffect(spec) {
 
 // Effects 1-10 are the number row (0 is the tenth), then the keyboard's top
 // row left to right, then the rows below. Skipped: f (trigger), k, l and s,
-// which effects use for their own actions. Effects past the end of the pool
-// have no key but are still on the chips, the arrows and the swipe.
-const KEY_POOL = [..."1234567890qwertyuiopadghjzxcvbnm"];
+// which effects use for their own actions, and m (mute). Effects past the end
+// of the pool have no key but are still on the chips, the arrows and the swipe.
+const KEY_POOL = [..."1234567890qwertyuiopadghjzxcvbn"];
 
 export function buildRegistry(list) {
   const ids = new Set(), names = new Set();

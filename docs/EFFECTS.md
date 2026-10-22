@@ -103,6 +103,9 @@ capped so a background tab doesn't teleport everything.
   `drawMaskSpace`, `maskAvailable`.
 - **Kits.** `spill` (light on the room), `filmGrain`, `titleCardAt`, sparks,
   `shakeScreen`, smoke particles, comic pops, Portal's scenes.
+- **Sound.** `playSound(name, { pan, pitch, volume, duration })` for a
+  one-shot, `hum(name, level)` every frame for a held sound (a charge, a
+  laser). All synthesized: see the Sound section of `api.js` for the names.
 - **Page.** `demoMode`, `urlParams` (for your own options), `flashStatus`.
 
 Effects import only from `api.js`, never from `core/` or `lib/` directly.
@@ -202,6 +205,8 @@ export default defineEffect({
   hand's scale.
 - **Give it a `demo` hook.** With one, the effect works in `?demo`, can be
   seen without a camera, and gets real coverage from `npm test`.
+- **Give the big moment a sound.** A launch, a hit, a snap. Pass `pan:` the
+  x where it happens. Leave quiet effects quiet.
 - **Give overlay effects a `hint` and a `trigger`.** The hint is the only
   instruction anyone gets. The trigger makes the effect usable when the
   gesture is hard.

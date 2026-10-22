@@ -1,7 +1,7 @@
 // Laser Eyes — raise your eyebrows; turn your head to aim
 
 import { addSpark, canvas, clamp01, ctx, defineEffect, dist, drawSmoke,
-  drawSparks, emitSmoke, flashStatus, gagClock, makeScratch, rayToEdge,
+  drawSparks, emitSmoke, flashStatus, gagClock, hum, makeScratch, rayToEdge,
   sizeScratch, smoothPoints, smoothstep, spill, stepSmoke, stepSparks,
   toScreen } from "../api.js";
 
@@ -70,6 +70,7 @@ function renderLaser(t) {
   const dt = gagClock(t);
   const on = laser.seen && (laser.latched || laser.forced);
   laser.presence += ((on ? 1 : 0) - laser.presence) * (on ? 0.35 : 0.2);
+  hum("laser", laser.presence);
   const W = canvas.width, H = canvas.height;
   const sw = Math.max(1, Math.round(W / 2)), sh = Math.max(1, Math.round(H / 2));
   const burn = sizeScratch(sScorch, sw, sh), glow = sizeScratch(sScorchGlow, sw, sh);

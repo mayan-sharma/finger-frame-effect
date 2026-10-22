@@ -25,7 +25,8 @@ const browser = await puppeteer.launch({
   headless: true,
   protocolTimeout: 60000,        // a stalled page fails (and retries) in a minute
   // GitHub's Ubuntu runners have no usable Chrome sandbox.
-  args: process.env.CI ? ["--no-sandbox"] : [],
+  // Audio may start without a click, so the sound code runs too.
+  args: ["--autoplay-policy=no-user-gesture-required", ...(process.env.CI ? ["--no-sandbox"] : [])],
 });
 
 // One page: load `query`, run `frames` frames with `f` pressed at frame 120,

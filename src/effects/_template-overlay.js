@@ -8,10 +8,9 @@
 // This one is fireflies: show an open palm and they gather around it. `f`
 // scatters them in a burst of sparks.
 
-import {
-  addSpark, canvas, ctx, defineEffect, demoBlob, drawSparks, frame, gagClock, openCount,
-  palmCentre, spill, stepSparks, trackedHands, unit,
-} from "../api.js";
+import { addSpark, canvas, ctx, defineEffect, demoBlob, drawSparks, frame,
+  gagClock, openCount, palmCentre, playSound, spill, stepSparks, trackedHands,
+  unit } from "../api.js";
 
 const FLIES = 24;
 const LOST_FRAMES = 6;           // tracker frames the palm may drop out for
@@ -84,6 +83,8 @@ function trigger() {
     addSpark(x, y, Math.random() * Math.PI * 2, canvas.height * (0.2 + Math.random() * 0.5),
              0.5 + Math.random() * 0.5, canvas.height * 0.4, "#ffe08a");
   }
+  // Synthesized, no files: see the Sound section of api.js for every name.
+  playSound("shimmer", { pan: x });
 }
 
 // Another effect was selected: forget the palm.

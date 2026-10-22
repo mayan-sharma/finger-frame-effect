@@ -9,8 +9,8 @@
 import { canvas, ctx, defineEffect, demoPerson, dist, drawMaskSpace,
   drawSmoke, emitSmoke, flashStatus, frame, gagClock, isTwoFingerPose, jpFont,
   latinFont, lerpPt, makeScratch, maskAvailable, maskCanvas, maskImageData,
-  MIDDLE_MCP, palmCentre, sizeScratch, smoothstep, stepSmoke, titleCardAt,
-  toScreen, trackedHands, unit, WRIST } from "../api.js";
+  MIDDLE_MCP, palmCentre, playSound, sizeScratch, smoothstep, stepSmoke,
+  titleCardAt, toScreen, trackedHands, unit, WRIST } from "../api.js";
 
 // Shadow Clone: both hands in the two-finger pose, palm centres within
 // CLONE_SIGN_GAP palm lengths, held for CLONE_HOLD_S. Clones replay you from
@@ -86,6 +86,7 @@ function personCentre() {
 }
 
 function poof(x, y, size) {
+  playSound("poof", { pan: x, volume: 0.7 });
   for (let i = 0; i < 28; i++) {
     const a = Math.random() * Math.PI * 2, sp = size * (0.8 + Math.random() * 1.8);
     emitSmoke({

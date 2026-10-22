@@ -4,8 +4,8 @@
 // saves the newest print as a PNG.
 
 import { canvas, clamp, clamp01, ctx, defineEffect, demoMode, dist,
-  flashStatus, frame, gagClock, knobs, lerpPt, presence, quadCentroid,
-  smoothQuad, smoothstep, unit } from "../api.js";
+  flashStatus, frame, gagClock, knobs, lerpPt, playSound, presence,
+  quadCentroid, smoothQuad, smoothstep, unit } from "../api.js";
 
 // Polaroid: squeezing the frame fast (punch past POLAROID_SQUEEZE) is the
 // shutter. There is deliberately no self-timer: a shot only ever happens
@@ -111,6 +111,7 @@ function snapPolaroid(q) {
   });
   while (polaroid.pile.length > POLAROID_PILE) polaroid.pile.shift();
   polaroid.flash = 1;
+  playSound("shutter");
   flashStatus("📸 Click! — tap the pile or press s to save it", 2500);
 }
 

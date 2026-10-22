@@ -1,6 +1,6 @@
 // Every effect, in order. Adding one = one import and one entry here.
 // The order sets the chips, the arrow keys and swipes, and the keyboard
-// shortcuts: 1-9 and 0 for the first ten, then q w e r t y u i o p, a, d, ...
+// shortcuts: 1-9 and 0 for the first ten, then q w e r t y u i o p, a, d, g, h, ...
 
 import pixelate from "./pixelate.js";
 import blur from "./blur.js";
@@ -24,6 +24,8 @@ import speechBubbles from "./speech-bubbles.js";
 import polaroid from "./polaroid.js";
 import spiritBomb from "./spirit-bomb.js";
 import timeStone from "./time-stone.js";
+import asciiCam from "./ascii-cam.js";
+import rubberArm from "./rubber-arm.js";
 
 export default [
   pixelate, blur, noir, glitch, matrix, portal,
@@ -32,4 +34,5 @@ export default [
   infiniteVoid, hollowPurple, shadowClone,
   strangePortal, speechBubbles, polaroid,
   spiritBomb, timeStone,
+  asciiCam, rubberArm,
 ];

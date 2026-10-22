@@ -90,6 +90,18 @@ export { addSpark, ageOut, drawSparks, gagClock, shakeScreen, stepSparks } from 
 export { drawSmoke, emitSmoke, smokeParts, stepSmoke } from "./lib/smoke.js";
 export { comicPops, drawPops, POP_S } from "./lib/comic.js";
 
+// --- Sound ---------------------------------------------------------------------
+// Synthesized, so there are no files to ship. Silent until the first click or
+// key press (a browser rule), and when muted (`m`).
+//   playSound(name, { volume, pitch, pan, delay, duration })  a one-shot.
+//       pan: a canvas x, so the sound comes from where it happens.
+//   hum(name, level 0..1, pitch)  a held sound; call every frame. It fades
+//       out once you stop calling. Names: charge, laser, rumble.
+//   SOUNDS: every one-shot name (bang, tink, snikt, whoosh, slash, snap,
+//       thwip, boom, blast, shutter, poof, stretch, boing, thud, shimmer,
+//       crackle, flick, rewind, click).
+export { hum, playSound, SOUNDS } from "./lib/sound.js";
+
 // --- Demo stand-ins ------------------------------------------------------------
 // For your demo(t) hook: paint a hand blob or a whole person into the frame.
 // demoPerson also writes a matching person mask.

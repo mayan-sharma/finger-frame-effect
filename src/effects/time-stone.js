@@ -7,8 +7,8 @@
 // backwards. Drop the hand and time races forward to catch up with now.
 
 import { canvas, clamp, ctx, defineEffect, demoBlob, dist, drawVoidPerson,
-  frame, gagClock, makeScratch, MIDDLE_MCP, openCount, palmCentre,
-  sizeScratch, smoothstep, spill, trackedHands, unit, WRIST } from "../api.js";
+  frame, gagClock, hum, makeScratch, MIDDLE_MCP, openCount, palmCentre,
+  playSound, sizeScratch, smoothstep, spill, trackedHands, unit, WRIST } from "../api.js";
 
 // Time Stone: an open palm (three or more fingers up) stops time; twisting
 // it moves time by TIME_GAIN seconds per radian, through a TIME_SPAN_S ring
@@ -44,7 +44,10 @@ function timeTrack(pose, t) {
     if (++timeFx.lost > 6) { timeFx.on = false; timeFx.prevAng = null; timeFx.spin = 0; }
     return;
   }
-  if (!timeFx.on) timeFx.target = now;   // the moment the spell starts, time stops
+  if (!timeFx.on) {
+    timeFx.target = now;   // the moment the spell starts, time stops
+    playSound("shimmer", { pan: pose.x, pitch: 0.8 });
+  }
   timeFx.on = true;
   timeFx.lost = 0;
   timeFx.x = pose.x;
@@ -159,6 +162,7 @@ function renderTime(t) {
   const behind = now - timeFx.target;
   const bent = timeFx.on || behind > 0.03;
   timeFx.k += ((bent ? 1 : 0) - timeFx.k) * 0.15;
+  hum("rumble", Math.min(1, Math.abs(timeFx.spin) * 0.5) * timeFx.k);
 
   if (behind > 0.03) {
     const { best, prev } = timeSlotAt(timeFx.target);

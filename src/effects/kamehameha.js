@@ -1,8 +1,8 @@
 // Kamehameha — cup both hands to charge, shove them to fire
 
 import { addSpark, canvas, clamp01, ctx, defineEffect, demoBlob, dist,
-  drawSparks, frame, gagClock, KAME_PUSH, MIDDLE_MCP, palmCentre, shakeScreen,
-  smoothstep, spill, stepSparks, trackedHands, WRIST } from "../api.js";
+  drawSparks, frame, gagClock, hum, KAME_PUSH, MIDDLE_MCP, palmCentre,
+  playSound, shakeScreen, smoothstep, spill, stepSparks, trackedHands, WRIST } from "../api.js";
 
 // Kamehameha: both palms together charges the ball; once it has charged a
 // moment, a shove fires it. Sideways is a beam; at the camera (the hands
@@ -73,6 +73,7 @@ function fireKame(ang) {
   kame.charge = 0;
   kame.hist.length = 0;
   shakeScreen(canvas.height * (ang === null ? 0.03 : 0.015) * (0.5 + power));
+  playSound("blast", { pan: kame.x, duration: kame.beam.dur, pitch: ang === null ? 0.7 : 1 });
 }
 
 function drawKameBall(x, y, r, t, k) {
@@ -217,6 +218,7 @@ function renderKame(t) {
     kame.charge = Math.max(0, kame.charge - dt * 3);   // hands parted: it fizzles
   }
   const r = kameBallR();
+  hum("charge", kame.beam ? 0 : clamp01(kame.charge / KAME_CHARGE_S));
   stepMotes(dt, r);
   stepSparks(dt);
   if (kame.beam) {

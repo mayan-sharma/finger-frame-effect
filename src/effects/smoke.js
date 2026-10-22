@@ -8,8 +8,8 @@
 import { clamp, clamp01, ctx, defineEffect, DEMO_SKIN, dist, drawSmoke,
   emitSmoke, fctx, FINGER_W_M, fingerStraightness, flashStatus, frame,
   handPxPerMetre, INDEX_MCP, isTwoFingerPose, lerpPt, makeScratch, MIDDLE_MCP,
-  mouth, PINKY_MCP, POSE_DOWN_OFF, POSE_DOWN_ON, RING_MCP, sizeScratch,
-  smokeParts, stepSmoke, THUMB_IP, THUMB_TIP, toScreen, WRIST } from "../api.js";
+  mouth, PINKY_MCP, playSound, POSE_DOWN_OFF, POSE_DOWN_ON, RING_MCP,
+  sizeScratch, smokeParts, stepSmoke, THUMB_IP, THUMB_TIP, toScreen, WRIST } from "../api.js";
 
 const CIG_CONFIRM_FRAMES = 3;    // frames the pose must hold before it lights
 const CIG_LOST_FRAMES = 8;       // frames it survives a tracking dropout
@@ -144,6 +144,7 @@ function applyLighterTarget(target) {
   lighter.scale = target.scale;
   if (!lighter.on) {
     // The flick: it catches with a spray of sparks.
+    playSound("flick", { pan: target.x });
     lighter.x = lighter.px = target.x;
     lighter.y = target.y;
     lighter.vx = lighter.lean = 0;
@@ -193,6 +194,7 @@ function lightCigarette() {
   cig.glow = 1;
   // It catches with a puff.
   if (cig.on) for (let i = 0; i < 18; i++) emitWisp();
+  if (cig.on) playSound("poof", { pan: cig.x, volume: 0.35, pitch: 1.6 });
 }
 
 function resetSmoke() {

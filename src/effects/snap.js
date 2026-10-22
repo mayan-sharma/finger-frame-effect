@@ -3,7 +3,7 @@
 import { addSpark, ageOut, canvas, clamp01, ctx, d3, defineEffect, demoPerson,
   drawMaskSpace, drawSparks, FINGER_W_M, fit, flashStatus, frame, gagClock,
   lerpPt, makeScratch, maskAvailable, maskCanvas, maskImageData, MIDDLE_MCP,
-  shakeScreen, sizeScratch, spill, stepSparks, THUMB_TIP, toScreen,
+  playSound, shakeScreen, sizeScratch, spill, stepSparks, THUMB_TIP, toScreen,
   trackedHands, unit } from "../api.js";
 
 // Snap: thumb and middle fingertips pinched, then sprung apart inside a
@@ -61,6 +61,7 @@ function doSnap(x, y, scale) {
              0.2 + Math.random() * 0.35, scale * 0.6, i % 3 ? "#ffe9a8" : "#ffffff");
   }
   shakeScreen(scale * 0.004);
+  playSound("snap", { pan: x });
   if (snap.phase === "idle") {
     snap.phase = "snapped";
     snap.t = 0;
@@ -69,6 +70,7 @@ function doSnap(x, y, scale) {
     // Snap again to undo it.
     snap.phase = "returning";
     snap.t = 0;
+    playSound("rewind", { duration: RETURN_S });
   }
 }
 
@@ -358,13 +360,18 @@ function renderSnap(t) {
     snap.phase = "dusting";
     snap.t = 0;
     snap.field = null;            // a new pattern every time
+    playSound("whoosh", { duration: DUST_S, volume: 0.8 });
   }
   if (snap.phase === "dusting") {
     snap.prog = Math.min(1, snap.t / DUST_S);
     if (snap.t >= DUST_S) { snap.phase = "gone"; snap.t = 0; }
   } else if (snap.phase === "gone") {
     snap.prog = 1;
-    if (snap.t >= DUST_HOLD_S) { snap.phase = "returning"; snap.t = 0; }
+    if (snap.t >= DUST_HOLD_S) {
+      snap.phase = "returning";
+      snap.t = 0;
+      playSound("rewind", { duration: RETURN_S });
+    }
   } else if (snap.phase === "returning") {
     snap.prog = Math.max(0, snap.prog - dt / RETURN_S);
     if (snap.prog <= 0) { snap.phase = "idle"; snap.t = 0; }

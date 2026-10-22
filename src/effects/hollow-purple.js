@@ -6,9 +6,9 @@
 // path; shove it at the camera and it erases the whole screen.
 
 import { addSpark, canvas, cellHash, ctx, defineEffect, demoBlob, dist,
-  drawSparks, frame, gagClock, jpFont, KAME_PUSH, latinFont, makeScratch,
-  MIDDLE_MCP, palmCentre, rayToEdge, shakeScreen, sizeScratch, smoothstep,
-  spill, stepSparks, titleCardAt, trackedHands, unit, WRIST } from "../api.js";
+  drawSparks, frame, gagClock, hum, jpFont, KAME_PUSH, latinFont, makeScratch,
+  MIDDLE_MCP, palmCentre, playSound, rayToEdge, shakeScreen, sizeScratch,
+  smoothstep, spill, stepSparks, titleCardAt, trackedHands, unit, WRIST } from "../api.js";
 
 // Hollow Purple: an orb over each hand (blue on the left of the screen, red
 // on the right). Held within PURPLE_FUSE palm lengths for PURPLE_FUSE_S they
@@ -105,6 +105,7 @@ function formPurple(x, y, palm, now) {
              0, i % 3 === 0 ? "#7fb2ff" : i % 3 === 1 ? "#ff6b6b" : "#e2b8ff");
   }
   shakeScreen(canvas.height * 0.006);
+  playSound("shimmer", { pan: x, pitch: 0.6 });
 }
 
 // `ang` null is straight at the camera.
@@ -117,6 +118,8 @@ function firePurple(ang) {
   purple.cool = 1.4;                // the hands need a moment before the next
   purple.hist.length = 0;
   shakeScreen(H * (ang === null ? 0.035 : 0.02));
+  playSound("blast", { pan: purple.fx, pitch: 0.6, duration: 1.5 });
+  playSound("boom", { pan: purple.fx, duration: 2 });
 }
 
 // Where the shot's head is, how long its tunnel is, and whether it is done.
@@ -321,6 +324,7 @@ function renderPurple(t) {
     orb.p += ((show ? 1 : 0) - orb.p) * (show ? 0.2 : 0.3);
   }
   purple.fp += ((purple.formed ? 1 : 0) - purple.fp) * 0.25;
+  hum("charge", purple.formed ? 0.8 : purple.merge * 0.7, purple.formed ? 1.5 : 1);
   stepSparks(dt);
 
   // The shot and the tunnel it leaves.

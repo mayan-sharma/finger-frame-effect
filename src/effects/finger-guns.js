@@ -3,8 +3,8 @@
 import { addSpark, ageOut, canvas, clamp01, comicPops, ctx, defineEffect,
   demoBlob, dist, drawPops, drawSmoke, drawSparks, emitSmoke, fingerDown,
   fingerUp, frame, gagClock, INDEX_MCP, INDEX_TIP, MIDDLE_MCP, PINKY_MCP,
-  POP_S, rayToEdge, RING_MCP, shakeScreen, smoothstep, spill, stepSmoke,
-  stepSparks, THUMB_TIP, trackedHands, unit, WRIST } from "../api.js";
+  playSound, POP_S, rayToEdge, RING_MCP, shakeScreen, smoothstep, spill,
+  stepSmoke, stepSparks, THUMB_TIP, trackedHands, unit, WRIST } from "../api.js";
 
 // Finger Guns: index out, the rest curled, thumb cocked up. Dropping the
 // thumb onto the hand fires (its reach to the index's first bone falls
@@ -115,6 +115,7 @@ function fireGun(g) {
              s * 0.5, "#ffd27a");
   }
   shakeScreen(s * 0.006);
+  playSound("bang", { pan: mx, pitch: g.atCam ? 0.8 : 1 });
   // A brass casing kicked out of the top of the hand, back over the knuckles.
   if (!g.atCam) {
     const up = dx < 0 ? 1 : -1;               // whichever perpendicular points up
@@ -127,6 +128,7 @@ function fireGun(g) {
       s, age: 0,
     });
     while (gunFx.casings.length > 12) gunFx.casings.shift();
+    playSound("tink", { pan: g.x, delay: 0.4, volume: 0.5 });
   }
 }
 
