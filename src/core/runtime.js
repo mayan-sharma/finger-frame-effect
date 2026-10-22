@@ -50,6 +50,7 @@ export function buildChips() {
   registry.forEach(({ fx, key }, i) => {
     const el = document.createElement("div");
     el.className = "fx" + (i === current ? " active" : "");
+    el.dataset.id = fx.id;
     el.innerHTML = (key ? `<span class="k">${key}</span>` : "") + `<span class="n"></span>`;
     el.querySelector(".n").textContent = fx.name;
     el.addEventListener("click", () => setEffect(i));

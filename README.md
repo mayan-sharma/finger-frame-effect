@@ -1,58 +1,92 @@
 # Finger Frame Effect
 
-Hold both hands up in an open "L" (thumb + index spread apart) like a movie
-director framing a shot. The quad formed by your four fingertips becomes a
-live effect window over your webcam feed.
+Hand-tracked webcam effects that run entirely in your browser. Hold both hands
+up in an open "L", like a director framing a shot, and the box between your
+fingertips becomes a live effect window. Or put the frame down and use your
+hands and face instead: charge a Kamehameha, snap half of yourself to dust,
+draw a portal in the air, talk in comic bubbles.
+
+**[Try it live](https://mayan-sharma.github.io/finger-frame-effect/)**. It
+needs a webcam; add `?demo` to try it without one.
+
+- **22 effects**: 7 inside the frame, 15 driven by hand poses or your face.
+- **No build step, no install.** Plain ES modules and MediaPipe from a CDN.
+- **Adding an effect is one file.** See [Writing an effect](docs/EFFECTS.md).
 
 Inspired by [sophiamyang/finger-frame-effect](https://github.com/sophiamyang/finger-frame-effect).
 
-## Run
+## Run it locally
 
-No build step. The camera requires localhost or HTTPS:
+The camera only works on `localhost` or HTTPS, and ES modules need a server,
+so serve the folder:
 
-```
-python -m http.server 8123
+```sh
+npm start                      # Node 18+; or: python3 -m http.server 8123
 # open http://localhost:8123
 ```
 
-No camera handy? Use the synthetic demo scene:
+`npm start` turns caching off. With Python's server, hard-reload after
+editing a file, or the browser may keep running the old module.
 
-```
-http://localhost:8123/?demo
+No camera handy? `http://localhost:8123/?demo` paints a synthetic scene with
+stand-in hands and faces, and every effect works on it.
+
+URL options (they combine):
+
+| Param | Does |
+| ----- | ---- |
+| `?demo` | Synthetic scene instead of the camera |
+| `?fx=portal` | Start on an effect, by id or by number (`?fx=6`) |
+| `?try=my-effect` | Load `src/effects/my-effect.js` without listing it, and start on it |
+| `?scene=1` | Portal's starting world (0 to 2) |
+| `?keepPerson` | Matrix rain behind you rather than in front |
+| `?lang=hi-IN` | Speech Bubbles' language (any BCP 47 tag) |
+
+## Add your own effect
+
+```sh
+cp src/effects/_template-frame.js src/effects/my-effect.js    # or _template-overlay.js
+npm start
+# open http://localhost:8123/?try=my-effect&demo, then edit and reload
 ```
 
-Optional URL params: `?fx=N` starts on effect N (1–20), `?scene=N` picks the
-Portal scene (0–2), `?keepPerson` puts the Matrix rain behind you, and
-`?lang=hi-IN` (any BCP 47 tag) sets the Speech Bubbles language.
+Change the `id` and `name`, make it yours, then add one line to
+`src/effects/index.js` and run `npm test`. [docs/EFFECTS.md](docs/EFFECTS.md)
+covers the API, recipes for poses, faces and the person mask, and the
+conventions. [CONTRIBUTING.md](CONTRIBUTING.md) covers the rest.
 
 ## Controls
 
 | Key | Effect |
 | --- | ------ |
 | 1 | Pixelate |
-| 2 | Blur — frosted glass |
-| 3 | Noir — film grain, vignette; tilt warms it to sepia |
+| 2 | Blur: frosted glass |
+| 3 | Noir: film grain and vignette; tilt warms it to sepia |
 | 4 | Glitch |
-| 5 | Matrix |
-| 6 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
-| 7 | Smoke — no frame: two fingers hold a cigarette, a thumbs-up lights it, an open mouth exhales |
-| 8 | Rainbow — no frame: open your mouth and a rainbow pours out |
-| 9 | Finger Guns — no frame: 👉 thumb up, drop the thumb (or flick) to fire |
-| 0 | Snap — no frame: snap your fingers and you turn to dust |
-| q | Kamehameha — no frame: cup both hands to charge, shove to fire |
-| w | Web — no frame: 🤟 thwip to shoot a web onto the glass |
-| e | Laser Eyes — no frame: raise your eyebrows, turn your head to aim |
-| r | Claws — no frame: make a fist and three claws pop out; swing to slash |
-| t | Infinite Void — no frame: hold Gojo's crossed-finger sign for a Domain Expansion |
-| y | Hollow Purple — no frame: blue and red orbs over your hands; fuse them, then thrust |
-| u | Shadow Clone — no frame: both hands in the two-finger sign; four clones of you poof in |
-| i | Strange Portal — no frame: draw a circle in the air with your index finger; a sparking portal opens |
-| o | Speech Bubbles — no frame: talk, and your words appear in a comic bubble beside your head |
-| p | Polaroid — the frame is a camera: squeeze it to take a shot; it prints, develops and lands in a pile |
+| 5 | Matrix: press again to put the rain behind you |
+| 6 | Portal: press again to cycle scenes (Space / Synthwave / Sunset) |
+| 7 | Smoke (no frame): two fingers hold a cigarette, a thumbs-up lights it, an open mouth exhales |
+| 8 | Rainbow (no frame): open your mouth and a rainbow pours out |
+| 9 | Finger Guns (no frame): 👉 thumb up, drop the thumb (or flick) to fire |
+| 0 | Snap (no frame): snap your fingers and you turn to dust |
+| q | Kamehameha (no frame): cup both hands to charge, shove to fire |
+| w | Web (no frame): 🤟 thwip to shoot a web onto the glass |
+| e | Laser Eyes (no frame): raise your eyebrows, turn your head to aim |
+| r | Claws (no frame): make a fist and three claws pop out; swing to slash |
+| t | Infinite Void (no frame): hold Gojo's crossed-finger sign for a Domain Expansion |
+| y | Hollow Purple (no frame): blue and red orbs over your hands; fuse them, then thrust |
+| u | Shadow Clone (no frame): both hands in the two-finger sign; four clones of you poof in |
+| i | Strange Portal (no frame): draw a circle in the air with your index finger; a sparking portal opens |
+| o | Speech Bubbles (no frame): talk, and your words appear in a comic bubble beside your head |
+| p | Polaroid: the frame is a camera; squeeze it to take a shot, which prints, develops and lands in a pile |
+| a | Spirit Bomb (no frame): raise both open hands to gather light, throw them down |
+| d | Time Stone (no frame): an open palm stops time; twist it like a dial to rewind |
 
-Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
-Matrix rain falls in front of you or behind. On the gags (`9 0 q w e r t y u i o`),
-`f` fires the current one without the gesture.
+← / → or clicking the canvas cycle effects. ↑ / ↓, or pressing the current
+effect's key again, step its variant (Portal's world, Matrix front/behind,
+Strange Portal's world). On the frame-less effects, `f` fires the current one
+without the gesture. `k` toggles the Matrix rain, `l` lights Smoke's
+cigarette, and `s` saves the newest Polaroid.
 
 ## The frame is a knob
 
@@ -93,7 +127,7 @@ With **one open hand** up, sweep it:
 | Slide | Does |
 | ----- | ---- |
 | ← / → | Previous / next effect |
-| ↑ / ↓ | Cycle the current effect's variant — Portal scene, or Matrix front/behind |
+| ↑ / ↓ | Cycle the current effect's variant: Portal's scene, Matrix front/behind, or Strange Portal's world |
 
 (The other effects have no variant axis; they are steered by the frame's own
 geometry instead — see **The frame is a knob** above.)
@@ -163,7 +197,7 @@ free. Put the cigarette away for six seconds and the next one is fresh.
   (cheap, and the upscale is free blur); the thin thread off the tip is drawn
   at full res, where quarter-res would turn it into blocks.
 
-`?demo&fx=7` paints a stand-in face and both hands, and lights the cigarette
+`?demo&fx=smoke` paints a stand-in face and both hands, and lights the cigarette
 by itself, so the whole sequence runs without a camera.
 
 ### Rainbow — open wide
@@ -184,15 +218,15 @@ away. Swing your head and the stream whips around behind it.
   camera. Gravity is far below the real thing on purpose: at true scale the
   stream is off screen in a quarter of a second.
 
-`?demo&fx=8` runs it on the stand-in face.
+`?demo&fx=rainbow` runs it on the stand-in face.
 
 ### The gesture gags
 
-Eleven more frame-less effects, each a pose that arms it plus a motion that
-fires it. Every hand threshold is in palm lengths (wrist to middle knuckle),
+Thirteen more frame-less effects, each a pose that arms it plus a motion
+that fires it. Every hand threshold is in palm lengths (wrist to middle knuckle),
 read off the tracker's metric 3D landmarks, so they hold at any distance.
-`f` fires the current gag by hand; `?demo&fx=9`…`19` runs each one on
-stand-ins.
+`f` fires the current gag by hand; `?demo&fx=<id>` (say `?demo&fx=claws`)
+runs each one on stand-ins.
 
 | Key | Gag | Pose | Trigger | You get |
 | --- | --- | ---- | ------- | ------- |
@@ -207,6 +241,8 @@ stand-ins.
 | u | **Shadow Clone** | Both hands in the two-finger pose, held together | Hold it 0.4 s; again to dispel | 影分身の術: four clones poof out of smoke on either side. Each is your live cut-out (person mask) replayed a different beat late from a ring buffer, so they move like separate people. The back pair is smaller and darker, and the real you stays in front. |
 | i | **Strange Portal** | ☝️ index up, ring + pinky curled | Trace a circle in the air | Sparks follow your fingertip; close the loop and a ring of molten sparks spins open at that size and place, throwing sparks off its rim and lighting the room orange. Inside is another world: first the Mirror Dimension (the room folded into a turning kaleidoscope), then Space, Synthwave and Sunset. A vertical slide changes the world. Draw a circle over it to close it; draw one elsewhere and it moves there. A loop counts once it sweeps 315° round its own centre and stays round, so a wave or zigzag doesn't open one. |
 | o | **Speech Bubbles** | Just talk (allow the microphone) | Each pause ends a bubble | Live speech recognition fills a comic bubble beside your head, with its tail on your mouth, as you speak. It sits on whichever side has more room. The next words start a new bubble and the old ones stack up and float away. Talk with your mouth wide open and it's a shout: a jagged yellow burst in red capitals. With no recogniser, no mic or no network, a moving mouth still gets a bubble of animated dots. Uses Chrome's Web Speech API, which sends the audio to Google's speech service. |
+| a | **Spirit Bomb** | Both open hands raised high | Throw them down, or shove at the camera | The light drains out of the room into a sphere gathering above your hands, in streams from every corner, until the screen is dark but for it. Throw it and it comes crashing toward you in a blinding impact as the light floods back. Lower your hands slowly instead and it fizzles. |
+| d | **Time Stone** | ✋ An open palm | Twist it like a dial | The green mandala comes up and time stops. Counter-clockwise rewinds the room, clockwise runs it forward again, and holding still holds the moment. You stay in the present (person mask) while the world behind you plays backwards. Drop the hand and time races forward to catch up. |
 
 - **Snap** needs the person mask, and you can only disappear if something
   is behind you. The background is learned from every pixel you are not
@@ -256,6 +292,11 @@ than pasted over it:
 
 ## How it works
 
+- **Every effect is a module** in `src/effects/`, registered in
+  `src/effects/index.js` through `defineEffect()`. The app shell in
+  `src/core/` runs the camera, trackers, frame and loop, and calls each
+  effect's hooks. Effects reach the shared helpers in `src/lib/` only
+  through `src/api.js`.
 - **MediaPipe Hand Landmarker** (GPU delegate) tracks up to two hands per
   video frame.
 - When both hands pass a thumb–index spread check (with hysteresis), the four
@@ -275,6 +316,41 @@ than pasted over it:
 Modules load from jsDelivr with an automatic fallback to unpkg, since
 jsDelivr is blocked or TLS-untrusted on some networks. Needs an internet
 connection for the WASM + models (demo mode works offline once cached).
+
+## Project layout
+
+```
+index.html            the page
+src/main.js           boot: URL options, camera, trackers, the loop
+src/api.js            everything an effect may import, documented
+src/effects/          one file per effect, plus index.js (the list) and templates
+src/core/             registry, frame loop, the finger frame, trackers, input
+src/lib/              shared helpers: hands, face, person mask, particles, scenes
+test/                 headless smoke test with a scripted fake tracker
+docs/EFFECTS.md       how to write an effect
+terminal/             the terminal edition (Python), below
+```
+
+## Privacy
+
+Everything runs on your device. The camera feed goes to MediaPipe's trackers
+running in the page (WebAssembly and WebGL) and is never uploaded. The page
+downloads the MediaPipe runtime and models from jsDelivr or unpkg and from
+`storage.googleapis.com`. Polaroid prints save to your own downloads. The
+one exception is **Speech Bubbles**: it uses the browser's Web Speech API,
+which in Chrome sends your audio to Google's speech service. It only starts
+when you select that effect.
+
+## Contributing
+
+New effects are the most welcome contribution, and the easiest:
+[docs/EFFECTS.md](docs/EFFECTS.md). Everything else is in
+[CONTRIBUTING.md](CONTRIBUTING.md). `npm test` runs every effect headless,
+and CI runs it on every pull request.
+
+## License
+
+[MIT](LICENSE)
 
 ---
 
