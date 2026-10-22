@@ -21,62 +21,70 @@ No camera handy? Use the synthetic demo scene:
 http://localhost:8123/?demo
 ```
 
-Optional URL params: `?fx=N` starts on effect N (1–13), `?scene=N` picks the
-Portal scene (0–2), `?style=N` the Anime style (0–3), `?keepPerson` puts the
-Matrix rain behind you. They combine with `?demo`.
+Optional URL params: `?fx=N` starts on effect N (1–20), `?scene=N` picks the
+Portal scene (0–2), `?keepPerson` puts the Matrix rain behind you, and
+`?lang=hi-IN` (any BCP 47 tag) sets the Speech Bubbles language.
 
 ## Controls
 
 | Key | Effect |
 | --- | ------ |
 | 1 | Pixelate |
-| 2 | Blur |
-| 3 | Invert |
-| 4 | Noir |
-| 5 | Glitch |
-| 6 | Toon |
-| 7 | Van Gogh |
-| 8 | Anime — press again to cycle styles (Hayao / Shinkai / Ghibli / Sketch) |
-| 9 | Matrix |
-| 0 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
-| q | Inferno — heat simulation: your movement ignites fire that rises and curls |
-| w | Shatter — the frame cracks into Voronoi glass shards that drift apart |
-| e | Aurora — your silhouette emits waves that ripple outward as light curtains |
+| 2 | Blur — frosted glass |
+| 3 | Noir — film grain, vignette; tilt warms it to sepia |
+| 4 | Glitch |
+| 5 | Matrix |
+| 6 | Portal — press again to cycle scenes (Space / Synthwave / Sunset) |
+| 7 | Smoke — no frame: two fingers hold a cigarette, a thumbs-up lights it, an open mouth exhales |
+| 8 | Rainbow — no frame: open your mouth and a rainbow pours out |
+| 9 | Finger Guns — no frame: 👉 thumb up, drop the thumb (or flick) to fire |
+| 0 | Snap — no frame: snap your fingers and you turn to dust |
+| q | Kamehameha — no frame: cup both hands to charge, shove to fire |
+| w | Web — no frame: 🤟 thwip to shoot a web onto the glass |
+| e | Laser Eyes — no frame: raise your eyebrows, turn your head to aim |
+| r | Claws — no frame: make a fist and three claws pop out; swing to slash |
+| t | Infinite Void — no frame: hold Gojo's crossed-finger sign for a Domain Expansion |
+| y | Hollow Purple — no frame: blue and red orbs over your hands; fuse them, then thrust |
+| u | Shadow Clone — no frame: both hands in the two-finger sign; four clones of you poof in |
+| i | Strange Portal — no frame: draw a circle in the air with your index finger; a sparking portal opens |
+| o | Speech Bubbles — no frame: talk, and your words appear in a comic bubble beside your head |
+| p | Polaroid — the frame is a camera: squeeze it to take a shot; it prints, develops and lands in a pile |
 
 Arrow keys or clicking the canvas cycle effects. `k` toggles whether the
-Matrix rain falls in front of you or behind.
+Matrix rain falls in front of you or behind. On the gags (`9 0 q w e r t y u i o`),
+`f` fires the current one without the gesture.
 
-### GPU shader effects
+## The frame is a knob
 
-`q` / `w` / `e` are **simulations**, not filters. A filter maps this frame's
-pixels to output; these carry state forward and evolve it, which is why they
-keep moving after you stop.
+The quad used to be a stencil and nothing else — it said *where* an effect
+drew and never *how*, so every effect ran at one fixed setting forever. But
+your hands are already holding three continuous values, and the box's
+geometry is now normalized into four dials that every effect reads:
 
-They get four inputs: the current crop, **the previous frame's output** (used
-as a state field, not just for trails), **the previous camera frame** (so they
-can measure what actually moved), and **the person mask**.
+| Dial | Range | You do this | It means |
+| ---- | ----- | ----------- | -------- |
+| **size** | 0…1 | open or close the frame | how much |
+| **tilt** | −1…1 | rotate the frame | which angle, or which hue |
+| **aspect** | −1…1 | squash it wide or tall | a second axis |
+| **punch** | 0…1 | squeeze *fast* | a transient hit that then decays |
 
-- **Inferno** treats the feedback buffer as a heat field. Every frame heat
-  advects upward, diffuses into neighbours, and cools; your motion injects
-  fuel. Wave a hand and the flame outlives the gesture because it's state.
-- **Shatter** builds a Voronoi cell decomposition with a second pass for true
-  edge distance (which is what makes the cracks crisp rather than blobby).
-  Each shard flies out on its own heading with a lit bevel; break energy
-  accumulates from motion and decays, so one swipe shatters and then drifts.
-- **Aurora** propagates a wave field outward from your silhouette each frame
-  and folds it through sine bands into curtains. Ripples keep travelling after
-  you move away — the box remembers where you were.
+The meaning is deliberately the same everywhere, so learning it on one effect
+transfers to the rest. A readout in the top-left corner shows all four while a
+frame is up, because a dial you cannot see is a dial you cannot learn.
 
-Feedback means the shader can't draw straight to the screen, so it
-ping-pongs between two framebuffers: read last frame's texture, write to the
-other, then repeat the draw to the visible canvas. History is cleared when
-the effect or the box size changes, or an old effect's trails would bleed
-into the new one.
+| Effect | size | tilt | punch |
+| ------ | ---- | ---- | ----- |
+| Pixelate | block size | | |
+| Blur | focus | hue | |
+| Noir | contrast | sepia warmth | |
+| Glitch | severity | | tear burst |
+| Matrix | rain density | | shoves the rain down |
+| Portal | how fast the other world runs | | |
 
-One GL context is shared by all three and the programs compile once, since
-browsers drop the oldest context when a page opens too many. If WebGL is
-unavailable or a shader fails to compile, the box falls back to the plain
-feed rather than going blank.
+Everything is smoothed: raw fingertip geometry jitters by a few pixels a
+frame, and an unsmoothed dial makes the effect buzz. Punch is the derivative
+of size, which is what makes it read as a *hit* rather than as another
+position dial — a slow squeeze does nothing, a fast one fires it.
 
 ### Slide gestures
 
@@ -85,7 +93,10 @@ With **one open hand** up, sweep it:
 | Slide | Does |
 | ----- | ---- |
 | ← / → | Previous / next effect |
-| ↑ / ↓ | Cycle the current effect's variant — Anime style, Portal scene, or Matrix front/behind |
+| ↑ / ↓ | Cycle the current effect's variant — Portal scene, or Matrix front/behind |
+
+(The other effects have no variant axis; they are steered by the frame's own
+geometry instead — see **The frame is a knob** above.)
 
 It gates on an open hand (three or more fingers extended, measured from the
 landmarks rather than a model label, since a swiping hand is motion blurred),
@@ -94,25 +105,17 @@ doesn't count, requires one axis to clearly beat the other so a diagonal wave
 does nothing, and only fires once per 700 ms. Two hands up is the framing
 pose, so slides are one-handed only.
 
-### The three heavier effects
+### Polaroid
 
-**Anime** restyles the framed region with the AnimeGAN family. Press `8`
-again to cycle four styles:
+Effect `p` turns the frame into a camera.
 
-| Style | Look | Size |
-| ----- | ---- | ---- |
-| Hayao | Warm Ghibli cel-shading, soft ink outlines | 8.6 MB |
-| Shinkai | Saturated teal-blue skies, high contrast (*Your Name*) | 8.6 MB |
-| Ghibli | Softer painterly v3 model, faster than the v2 pair | 7.0 MB |
-| Sketch | Grey pencil-sketch portrait | 4.2 MB |
+- **Frame a shot** and the frame becomes a viewfinder, with thirds lines and focus corners.
+- **Take it** by squeezing the frame fast (the punch dial), like pressing a shutter. There is no self-timer: a photo only happens when you squeeze, or press `f`.
+- **The print** is straightened from the frame's tilt, so a tilted frame still gives an upright photo. It gets an instant-film grade (warm, slightly faded, vignetted) and a card with a deep bottom strip and the date in marker.
+- It flies from the frame to a pile in the corner and **develops** over 5 s, coming up out of a murky grey-green, cool first and full colour last.
+- **Save** the newest print as a PNG by clicking the pile or pressing `s`. `f` takes a shot without the gesture.
 
-Each style downloads on first use and is then cached, so switching back is
-instant. They share one tensor spec (NHWC, `[-1,1]`, dynamic H/W) but *not*
-their input tensor names, so the feed is keyed off the session's own
-`inputNames`. Inference runs on **WebGPU** where available, falling back to
-wasm at reduced resolution, and never blocks the render loop — tracking keeps
-full speed while stylized frames stream in, and the working resolution adapts
-to measured inference time. Toon stands in until the first result lands.
+### Matrix and Portal
 
 **Matrix** fills the frame with digital rain, in front of you by default.
 Press `k` and selfie segmentation cuts you out so the rain falls behind you
@@ -120,6 +123,136 @@ instead.
 
 **Portal** keeps you real and replaces the world behind you with an animated
 scene. Both it and `k`-mode need the camera, so demo mode shows scenes only.
+
+### Smoke — the one effect with no frame
+
+Select it (`7`) and the two-hand frame is switched off. Instead:
+
+| You do this | You get |
+| ----------- | ------- |
+| Hold up **two fingers** (index + middle, ring + pinky curled) | A cigarette pinched between them — unlit |
+| **Thumbs-up** with your other hand | Your thumb is a lighter: sparks, then a flame off the tip |
+| Hold the flame on the cigarette's tip | The tip warms, then catches with a puff; a thread of smoke rises off it |
+| **Open your mouth** (once it is lit) | You exhale a plume — dense at first, thinning as the breath runs out |
+| Bring the filter to your lips | The ember flares, like taking a drag |
+
+No smoke without fire: until it is lit, an open mouth only gets a hint to
+light it. `l` lights or stubs it out by hand, for when a second hand is not
+free. Put the cigarette away for six seconds and the next one is fresh.
+
+- **The pose** is read from the hand tracker's metric 3D landmarks: a finger
+  is "up" when its first bone and the rest of it point the same way. That
+  holds for a finger aimed at the camera, where a 2D test calls it curled.
+  The thumb is ignored, so a peace sign and a relaxed smoker's hold both count.
+- **"Between the fingers"** is an occlusion trick. The cigarette is drawn on
+  its own layer, then the index finger is erased out of that layer, so the
+  camera's own pixels show through: it passes *behind* the index finger while
+  its filter end sits in front of the middle one.
+- **The lighter** is a fist with the thumb out: four fingers curled, and the
+  thumb tip at least half a palm length from the index finger's middle joint.
+  The flame always burns upward on screen whichever way the thumb points, and
+  leans back against the hand's motion. The cigarette catches once its tip has
+  sat in the body of the flame for about a third of a second.
+- **Scale** comes from the hand's measured pixels-per-metre, so the cigarette
+  keeps real-world proportions (9 cm long) at any distance.
+- **The mouth** comes from MediaPipe Face Landmarker, loaded only when Smoke
+  is first selected. "Open" is lip gap over mouth width with a hysteresis
+  latch set above what talking or a grin reaches.
+- **The smoke** is a particle system in one shared flow field, so neighbours
+  bend together into ribbons. The breath is stamped into a quarter-res layer
+  (cheap, and the upscale is free blur); the thin thread off the tip is drawn
+  at full res, where quarter-res would turn it into blocks.
+
+`?demo&fx=7` paints a stand-in face and both hands, and lights the cigarette
+by itself, so the whole sequence runs without a camera.
+
+### Rainbow — open wide
+
+The other frame-less effect (`8`), on the same mouth tracking as Smoke. Open
+your mouth and a rainbow pours out; shut it and the tail detaches and falls
+away. Swing your head and the stream whips around behind it.
+
+- **The stream is a chain of cross-sections.** Each is launched from the
+  mouth and then falls on its own, inheriting some of the head's velocity, so
+  the ribbon is simply wherever they have got to. The six bands are polygons
+  threaded through them, with round caps on the free ends — the head of the
+  stream is a row of drips.
+- **It starts inside the mouth.** The inner-lip outline from the face mesh is
+  filled with the same bands, darkening toward the upper lip, and the stream
+  is squared to the lip line where it leaves, so the two meet band for band.
+- **Physics is in mouth widths**, so it behaves the same near or far from the
+  camera. Gravity is far below the real thing on purpose: at true scale the
+  stream is off screen in a quarter of a second.
+
+`?demo&fx=8` runs it on the stand-in face.
+
+### The gesture gags
+
+Eleven more frame-less effects, each a pose that arms it plus a motion that
+fires it. Every hand threshold is in palm lengths (wrist to middle knuckle),
+read off the tracker's metric 3D landmarks, so they hold at any distance.
+`f` fires the current gag by hand; `?demo&fx=9`…`19` runs each one on
+stand-ins.
+
+| Key | Gag | Pose | Trigger | You get |
+| --- | --- | ---- | ------- | ------- |
+| 9 | **Finger Guns** | Index out, others curled, thumb up | Drop the thumb onto the hand, or flick the fingertip up | Muzzle flash, tracer, a bullet hole cracked into the glass down the line of fire, a comic BANG/PEW/POW, barrel smoke and a screen kick. Aim at the camera and the hole lands on the muzzle. Both hands work. |
+| 0 | **Snap** | Thumb + middle fingertips pinched | Spring them apart inside a quarter second | A shockwave and an Infinity Gauntlet on your hand. A beat later you dissolve into dust that blows away. Snap again, or wait 7 s, to come back. |
+| q | **Kamehameha** | Both palms together | Hold to charge, then shove | A crackling ball that grows as it charges. A sideways shove fires a beam that way. A shove at the camera (your hands suddenly grow) whites out the screen. |
+| w | **Web** | 🤟 index + pinky up, middle + ring folded | Each new thwip | A line from your wrist that splats a web onto the glass. It stays attached while you hold the pose and goes slack when you let go. |
+| e | **Laser Eyes** | — | Raise your eyebrows (or widen your eyes) | Heat vision from both irises, converging on one point. Turn your head to sweep it. Where it lands, it burns a trail into the glass that smoulders, sparks and smokes. |
+| r | **Claws** | ✊ a fist (thumb either way) | Swing it fast | SNIKT: three steel claws slide out from between your knuckles, a foot long at real scale and foreshortened with your hand. Swing with them out and the three tips tear parallel gashes into the glass. |
+| t | **Infinite Void** | 🤞 index + middle up and crossed (or pressed together), ring + pinky curled | Hold it half a second; again to collapse | Domain Expansion: a circle spreads from your fingertips and replaces the room with the void, a black sun with a white-hot rim, nebula and stars streaming out. You stay in front with a blue aura (person mask). 領域展開 then 無量空処 / INFINITE VOID title cards. |
+| y | **Hollow Purple** | Both hands up: an orb of 蒼 Blue over the one on the left of the screen, 赫 Red over the right | Bring them together until they fuse into 茈 Purple, then shove | Blue's motes fall inward, Red's rings push outward. Together they spiral round each other and fuse, with 虚式「茈」. A sideways shove fires the sphere across the screen, carving a tunnel of void with glowing ragged edges and sucking the feed's own colours into it; the tunnel heals after 3 s. A shove at the camera swells it over the whole screen. |
+| u | **Shadow Clone** | Both hands in the two-finger pose, held together | Hold it 0.4 s; again to dispel | 影分身の術: four clones poof out of smoke on either side. Each is your live cut-out (person mask) replayed a different beat late from a ring buffer, so they move like separate people. The back pair is smaller and darker, and the real you stays in front. |
+| i | **Strange Portal** | ☝️ index up, ring + pinky curled | Trace a circle in the air | Sparks follow your fingertip; close the loop and a ring of molten sparks spins open at that size and place, throwing sparks off its rim and lighting the room orange. Inside is another world: first the Mirror Dimension (the room folded into a turning kaleidoscope), then Space, Synthwave and Sunset. A vertical slide changes the world. Draw a circle over it to close it; draw one elsewhere and it moves there. A loop counts once it sweeps 315° round its own centre and stays round, so a wave or zigzag doesn't open one. |
+| o | **Speech Bubbles** | Just talk (allow the microphone) | Each pause ends a bubble | Live speech recognition fills a comic bubble beside your head, with its tail on your mouth, as you speak. It sits on whichever side has more room. The next words start a new bubble and the old ones stack up and float away. Talk with your mouth wide open and it's a shout: a jagged yellow burst in red capitals. With no recogniser, no mic or no network, a moving mouth still gets a bubble of animated dots. Uses Chrome's Web Speech API, which sends the audio to Google's speech service. |
+
+- **Snap** needs the person mask, and you can only disappear if something
+  is behind you. The background is learned from every pixel you are not
+  covering. Where you have never moved, it is filled by push-pull inpainting:
+  the frame with you cut out is halved down to a few pixels (each level
+  averages only the uncovered pixels), then painted back up coarsest first.
+  Step aside for a moment before snapping and the reveal is the real room.
+  The cut-out is dilated two mask pixels, because the plate is repainted
+  every frame and even a half-strength sliver of you would build up into an
+  outline.
+- **The dissolve order** is a sweep from the side the dust blows toward,
+  broken up by value noise, so the dust never flies across parts of you that
+  are still standing. Each mask pixel the sweep crosses sheds a particle in
+  your own colour, which greys to ash as it drifts.
+- **Laser aim** is the nose tip's offset from the middle of the face, in face
+  widths. Side to side, that is zero when you look straight ahead. Up and
+  down, the nose sits low, so that axis is measured against a slow baseline,
+  which only updates while the lasers are off. Looking straight at the
+  camera, the beams come at you: two flares, no line, no burn.
+- **Laser trigger** uses the face model's blendshapes (`browInnerUp`,
+  `eyeWide*`), turned on for every face effect.
+
+### Finish
+
+Small things that make the effects feel like they are in the room rather
+than pasted over it:
+
+- **Steady hands.** Every gag's hand points go through a One-Euro filter, a
+  low-pass whose cutoff rises with speed. At rest it more than halves the
+  tracker's pixel jitter, so props stop trembling, while a fast swipe trails
+  by about a third of a frame. The eyes and face points for Laser Eyes get
+  the same filter.
+- **Light spill.** Bright things light the scene around them: muzzle flashes
+  throw warm light, the Kamehameha ball and beam flood the room blue, laser
+  eyes redden the face and the burn point glows, the snap flashes, and the
+  Infinite Void charge glows on your fingertips. Each is a wide, faint radial
+  falloff in `screen` mode.
+- **The frame is glass.** A soft shadow outside the quad, a bright rim just
+  inside it, and a faint diagonal sheen that turns with the frame.
+- **Blur** is frosted glass (a cool milky wash and fine grain). **Noir** is
+  film: a vignette, a little gate weave, grain that changes every frame, and
+  tilt warms it from silver toward sepia.
+- **Finger Guns** eject a spinning brass casing back over your knuckles on
+  every shot. **Claws** cast a soft shadow, glint as they come out, and throw
+  sparks along every slash. **The gauntlet** fades in and out with your hand
+  instead of blinking on a dropped frame.
 
 ## How it works
 
@@ -131,8 +264,13 @@ scene. Both it and `k`-mode need the camera, so demo mode shows scenes only.
 - Corners are blended with velocity-adaptive smoothing; the quad survives up
   to 25 dropped frames and large jumps must persist 2 frames before being
   accepted.
+- The same quad is normalized into the four dials — area to `size`, the top
+  edge's angle to `tilt`, the edge-length ratio to `aspect`, the frame-to-frame
+  change in `size` to `punch` — and every effect reads them.
 - The selected effect renders inside the quad via canvas `clip()`, with a
-  smooth presence fade and pop-in.
+  smooth presence fade and pop-in. The dials come off the *smoothed* quad, not
+  the popped-in one: the pop is a presentation flourish and would otherwise
+  read as someone yanking the size dial every time a frame appears.
 
 Modules load from jsDelivr with an automatic fallback to unpkg, since
 jsDelivr is blocked or TLS-untrusted on some networks. Needs an internet

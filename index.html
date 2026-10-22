@@ -41,6 +41,37 @@
     font-size: 11px; font-variant-numeric: tabular-nums;
   }
 
+  /* Knob readout: the four dials the frame itself is driving. Hidden until
+     a frame is actually up, since the numbers mean nothing without one. */
+  #knobs {
+    position: fixed; top: 18px; left: 18px;
+    padding: 9px 11px 7px; border-radius: 12px;
+    background: rgba(10, 12, 16, 0.65); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: grid; gap: 6px; pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  #knobs.hidden { opacity: 0; }
+  #knobs .knob { display: grid; grid-template-columns: 46px 96px; align-items: center; gap: 9px; }
+  #knobs .kl {
+    color: #9aa4b0; font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  #knobs .bar {
+    position: relative; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.12);
+  }
+  /* Centre tick, so the bipolar dials read as "off centre" at a glance. */
+  #knobs .bar.bipolar::before {
+    content: ""; position: absolute; left: 50%; top: -2px;
+    width: 1px; height: 8px; background: rgba(255,255,255,0.22);
+  }
+  #knobs .bar i {
+    position: absolute; top: 0; height: 100%; border-radius: 2px;
+    background: #e8ecf1;
+  }
+  #knobs .bar.punch i { background: #ffc46b; }
+
   #badge {
     position: fixed; top: 18px; right: 18px;
     padding: 5px 11px; border-radius: 999px;
@@ -57,6 +88,7 @@
   <video id="cam" playsinline muted style="display:none"></video>
   <div id="status">Loading hand tracker…</div>
   <div id="badge">demo mode</div>
+  <div id="knobs" class="hidden"></div>
   <div id="hint"></div>
   <!-- Cache-bust on every load: without this the browser keeps serving a
        stale main.js after an edit, which silently hides new effects. -->
