@@ -95,11 +95,14 @@ export { comicPops, drawPops, POP_S } from "./lib/comic.js";
 // key press (a browser rule), and when muted (`m`).
 //   playSound(name, { volume, pitch, pan, delay, duration })  a one-shot.
 //       pan: a canvas x, so the sound comes from where it happens.
+//       reverb: 0..1 into a shared hall (big sounds have some by default).
+//       Returns false if nothing played. A recording listed in
+//       sounds/sounds.json under the same name plays instead.
 //   hum(name, level 0..1, pitch)  a held sound; call every frame. It fades
-//       out once you stop calling. Names: charge, laser, rumble.
+//       out once you stop calling. Names: charge, laser, rumble, drone.
 //   SOUNDS: every one-shot name (bang, tink, snikt, whoosh, slash, snap,
 //       thwip, boom, blast, shutter, poof, stretch, boing, thud, shimmer,
-//       crackle, flick, rewind, click).
+//       crackle, flick, rewind, gong, swell, click).
 export { hum, playSound, SOUNDS } from "./lib/sound.js";
 
 // --- Demo stand-ins ------------------------------------------------------------

@@ -7,7 +7,7 @@
 // same sign again collapses it back into your hand.
 
 import { addSpark, canvas, clamp01, ctx, defineEffect, demoPerson, drawSparks,
-  drawVoidPerson, fingerDown, fingerUp, flashStatus, frame, gagClock,
+  drawVoidPerson, fingerDown, fingerUp, flashStatus, frame, gagClock, hum,
   INDEX_MCP, INDEX_TIP, jpFont, latinFont, lerpPt, makeScratch, maskAvailable,
   MIDDLE_MCP, PINKY_MCP, playSound, RING_MCP, shakeScreen, sizeScratch,
   smoothstep, spill, stepSparks, titleCardAt, trackedHands } from "../api.js";
@@ -87,7 +87,23 @@ function toggleVoid(x, y) {
              0.2 + Math.random() * 0.4, 0, i % 2 ? "#ffffff" : "#8fc4ff");
   }
   shakeScreen(canvas.height * 0.01);
-  playSound("boom", { pan: x, pitch: voidFx.phase === "opening" ? 1 : 1.4 });
+  if (voidFx.phase === "opening") domainSound(x);
+  else closingSound(x);
+}
+
+// The air is pulled in while the circle spreads, and a temple gong lands as
+// it closes around you. The spoken lines play with the title cards when
+// sounds/ has recordings of them (see sounds/README.md).
+function domainSound(x) {
+  playSound("swell", { pan: x, duration: VOID_OPEN_S });
+  playSound("gong", { pan: x, delay: VOID_OPEN_S * 0.95, volume: 0.7 });
+  playSound("ryoiki-tenkai");
+  playSound("muryo-kusho", { delay: 1.5 });
+}
+
+function closingSound(x) {
+  playSound("swell", { pan: x, duration: VOID_CLOSE_S * 0.8, pitch: 1.4, volume: 0.7 });
+  playSound("thud", { pan: x, delay: VOID_CLOSE_S * 0.8, pitch: 0.6 });
 }
 
 // Stars in 3D, flying at the viewer out of the black sun.
@@ -193,8 +209,9 @@ function drawVoidTitles(c) {
   const env = (a, b, c0, d) => smoothstep(a, b, c) * (1 - smoothstep(c0, d, c));
   card("領域展開", H * 0.085, H * 0.14, env(0.05, 0.35, 1.5, 2.0), H * 0.02, jp);
   card("DOMAIN EXPANSION", H * 0.022, H * 0.215, env(0.15, 0.45, 1.5, 2.0), H * 0.012, latin);
-  card("無量空処", H * 0.12, H * 0.66, env(1.1, 1.5, 4.2, 5.0), H * 0.03, jp);
-  card("INFINITE VOID", H * 0.03, H * 0.76, env(1.3, 1.7, 4.2, 5.0), H * 0.02, latin);
+  // With the domain's name, spoken 1.5 s in (once 領域展開 has been said).
+  card("無量空処", H * 0.12, H * 0.66, env(1.5, 1.9, 4.6, 5.4), H * 0.03, jp);
+  card("INFINITE VOID", H * 0.03, H * 0.76, env(1.7, 2.1, 4.6, 5.4), H * 0.02, latin);
 }
 
 function renderVoid(t) {
@@ -215,6 +232,10 @@ function renderVoid(t) {
     r = maxR * (1 - k * k);
     if (k >= 1) voidFx.phase = "idle";
   }
+  // The void's own hum: up while the domain stands, gone as it collapses.
+  hum("drone", voidFx.phase === "idle" ? 0
+    : voidFx.phase === "closing" ? 0.6 * (1 - clamp01(voidFx.t / VOID_CLOSE_S))
+    : clamp01(voidFx.cast / 1.2));
   stepSparks(dt);
 
   if (r > 1) {

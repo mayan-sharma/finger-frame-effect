@@ -65,7 +65,7 @@ of a blank screen.
 | `chipLabel()` | The chip's text, if it should show more than the name (Portal shows its current world). |
 | `onKey(key)` | Any other key, lower-cased. Return `true` if you handled it. Only the live effect sees keys, so `k`, `l` and `s` are free to reuse. `f` is the trigger, and digits and most letters switch effects. |
 | `onClick(x, y)` | A click on the stage, in canvas px. Return `true` if handled; otherwise the click moves to the next effect. |
-| `locksSwipe()` | Return `true` while your own gesture could look like a swipe, so it doesn't change the effect mid-move. Time Stone's twist and Spirit Bomb's throw use this. |
+| `locksSwipe()` | Return `true` while your own gesture could look like a swipe, so it doesn't change the effect mid-move. Spirit Bomb's throw uses this. |
 
 `t` is the frame time in milliseconds. For per-frame physics, call
 `gagClock(t)` once in `render`: it returns the seconds since the last frame,
@@ -172,7 +172,7 @@ Rainbow is the smallest example. For anything beyond the mouth, implement
 
 Set `needs: { mask: true }`, draw your scene, then put the person back on top
 with `drawPersonOver(x, y, w, h)` (Portal) or `drawVoidPerson(color)`
-(Infinite Void, Time Stone). In demo mode, call `demoPerson(t, handAt)` from
+(Infinite Void). In demo mode, call `demoPerson(t, handAt)` from
 your `demo` hook to paint a silhouette and a matching mask.
 
 ### Variants and options

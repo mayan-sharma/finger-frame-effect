@@ -1,10 +1,14 @@
 // Sound effects, synthesized with Web Audio: no files to download, and every
-// one is a few oscillators and filtered noise. Two calls:
+// one is a few oscillators and filtered noise through a shared reverb.
 //
-//   playSound(name, { volume, pitch, pan, delay, duration })   a one-shot
+//   playSound(name, { volume, pitch, pan, delay, duration, reverb })  a one-shot
 //   hum(name, level, pitch)   a held sound (a charge, a laser). Call it every
 //                             frame with a 0..1 level; it fades out by itself
 //                             once you stop calling.
+//
+// Your own recordings can stand in for any of these: list them in
+// sounds/sounds.json (see sounds/README.md). They stay on your machine; the
+// repository ships none.
 //
 // Browsers only start audio after a click or a key press, so the first
 // gesture of either kind unlocks it; until then every call is silently
@@ -18,6 +22,8 @@ import { canvas } from "../core/stage.js";
 let ac = null;                   // the AudioContext, made on first use
 let master = null;
 let noiseBuf = null;
+let reverbIn = null;             // send bus into the shared reverb
+const samples = new Map();       // name -> AudioBuffer, from sounds/sounds.json
 let muted = false;
 try { muted = localStorage.getItem("ffe-muted") === "1"; } catch { /* private mode */ }
 
@@ -43,7 +49,41 @@ function audio() {
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = rand() * 2 - 1;
+  // A large dark hall: decaying stereo noise as the impulse response. It is
+  // what makes a boom sound like it happened somewhere.
+  const len = Math.round(ac.sampleRate * 3.2);
+  const ir = ac.createBuffer(2, len, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const ch = ir.getChannelData(c);
+    for (let i = 0; i < len; i++) ch[i] = (rand() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+  }
+  const verb = ac.createConvolver();
+  verb.buffer = ir;
+  const tone = ac.createBiquadFilter();
+  tone.type = "lowpass";
+  tone.frequency.value = 3200;
+  reverbIn = ac.createGain();
+  reverbIn.connect(tone).connect(verb).connect(master);
+  loadSamples();
   return ac;
+}
+
+// sounds/sounds.json maps a sound name to a file next to it, e.g.
+// { "ryoiki-tenkai": "ryoiki-tenkai.mp3", "bang": "my-gunshot.wav" }.
+async function loadSamples() {
+  let list = {};
+  try {
+    const res = await fetch("sounds/sounds.json");
+    if (res.ok) list = await res.json();
+  } catch { /* no manifest: synthesized sounds only */ }
+  for (const [name, file] of Object.entries(list)) {
+    try {
+      const data = await (await fetch(`sounds/${file}`)).arrayBuffer();
+      samples.set(name, await ac.decodeAudioData(data));
+    } catch (err) {
+      console.warn(`sounds/${file} (for "${name}") could not be loaded:`, err);
+    }
+  }
 }
 
 // Any click or key press may start audio; the browser requires one.
@@ -202,6 +242,24 @@ const SOUND_DEFS = {
   rewind(out, t, p, dur = 0.8) {
     noise(t, dur).connect(filter("bandpass", 300 * p, 3000 * p, t, dur, 2)).connect(env(t, 0.5, dur * 0.9, 0.08)).connect(out);
   },
+  // A temple gong struck once: inharmonic partials that ring for seconds,
+  // a slight pitch sag on the strike, and a sub-bass bloom under it.
+  gong(out, t, p, dur = 5) {
+    [[1, 1], [1.48, 0.6], [2.03, 0.45], [2.51, 0.3], [3.1, 0.22], [4.17, 0.15]].forEach(([k, a]) => {
+      const f = 68 * p * k;
+      const o = osc("sine", t, dur, f * 1.025, f);
+      o.frequency.setValueAtTime(f * 1.025, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.35);
+      o.connect(env(t, 0.5 * a, 0.004, dur / (0.6 + k * 0.4))).connect(out);
+    });
+    osc("sine", t, dur * 0.6, 44 * p, 30).connect(env(t, 0.9, 0.02, dur * 0.6)).connect(out);
+    noise(t, 0.25).connect(filter("lowpass", 1800 * p, 200, t, 0.2)).connect(env(t, 0.5, 0.002, 0.22)).connect(out);
+  },
+  // The air pulled in before something lands: a reversed, rising swell.
+  swell(out, t, p, dur = 0.9) {
+    noise(t, dur).connect(filter("bandpass", 180 * p, 1600 * p, t, dur, 1.2)).connect(env(t, 0.6, dur * 0.95, 0.04)).connect(out);
+    osc("sine", t, dur, 50 * p, 95 * p).connect(env(t, 0.5, dur * 0.95, 0.04)).connect(out);
+  },
   // A UI blip.
   click(out, t, p) {
     osc("square", t, 0.03, 1800 * p).connect(env(t, 0.08, 0.001, 0.03)).connect(out);
@@ -210,10 +268,19 @@ const SOUND_DEFS = {
 
 export const SOUNDS = Object.keys(SOUND_DEFS);
 
-export function playSound(name, { volume = 1, pitch = 1, pan = null, delay = 0, duration } = {}) {
-  if (!live()) return;
-  const def = SOUND_DEFS[name];
-  if (!def) { console.warn(`playSound: no sound "${name}" (have: ${SOUNDS.join(", ")})`); return; }
+// How much of each sound goes to the hall. Small, close sounds stay dry.
+const REVERB = { boom: 0.6, gong: 0.8, swell: 0.5, blast: 0.4, shimmer: 0.6, crackle: 0.3,
+                 bang: 0.25, thud: 0.2, snap: 0.25, rewind: 0.4, whoosh: 0.3 };
+
+// Plays `name`: your sample if sounds.json has one, otherwise the synthesized
+// sound. Returns whether anything played.
+export function playSound(name, { volume = 1, pitch = 1, pan = null, delay = 0, duration, reverb } = {}) {
+  if (!live()) return false;
+  const def = SOUND_DEFS[name], sample = samples.get(name);
+  if (!def && !sample) {
+    if (!SAMPLE_ONLY.has(name)) console.warn(`playSound: no sound "${name}" (have: ${SOUNDS.join(", ")})`);
+    return false;
+  }
   const t = ac.currentTime + delay;
   const out = ac.createGain();
   out.gain.value = volume;
@@ -225,9 +292,28 @@ export function playSound(name, { volume = 1, pitch = 1, pan = null, delay = 0, 
     tail = out.connect(sp);
   }
   tail.connect(master);
+  const wet = reverb ?? REVERB[name] ?? (sample ? 0.2 : 0);
+  if (wet > 0) {
+    const send = ac.createGain();
+    send.gain.value = wet;
+    tail.connect(send).connect(reverbIn);
+  }
+  if (sample) {
+    const src = ac.createBufferSource();
+    src.buffer = sample;
+    src.playbackRate.value = pitch;
+    src.connect(out);
+    src.start(t);
+    return true;
+  }
   // A touch of pitch jitter, so the tenth gunshot isn't the first one again.
   def(out, t, pitch * (0.96 + rand() * 0.08), duration);
+  return true;
 }
+
+// Names with no synthesized sound: effects play them only when you have
+// supplied a recording.
+const SAMPLE_ONLY = new Set(["ryoiki-tenkai", "muryo-kusho"]);
 
 // --- Held sounds ------------------------------------------------------------
 
@@ -255,6 +341,28 @@ const HUM_DEFS = {
     o.connect(filter("bandpass", 1200, 1200, h.t, 1, 0.7)).connect(amp).connect(h.gain);
     h.oscs = [o, trem];
     h.set = (level, p) => o.frequency.setTargetAtTime(150 * p * (0.9 + 0.3 * level), ac.currentTime, 0.05);
+  },
+  // A dark choir-like pad (A minor, low), breathing through a slow filter.
+  drone(h) {
+    h.oscs = [];
+    const lp = filter("lowpass", 500, 500, h.t, 1, 4);
+    for (const f of [55, 82.4, 110, 130.8]) {
+      for (const d of [0.996, 1.004]) {
+        const o = osc("sawtooth", h.t, 1e4, f * d);
+        o.connect(lp);
+        h.oscs.push(o);
+      }
+    }
+    const lfo = osc("sine", h.t, 1e4, 0.18);
+    const depth = ac.createGain();
+    depth.gain.value = 250;
+    lfo.connect(depth).connect(lp.frequency);
+    h.oscs.push(lfo);
+    const send = ac.createGain();
+    send.gain.value = 0.6;
+    lp.connect(h.gain);
+    lp.connect(send).connect(reverbIn);
+    h.set = (level, p) => lp.Q.setTargetAtTime(2 + 4 * level * p, ac.currentTime, 0.2);
   },
   // A low rumble: filtered noise.
   rumble(h) {

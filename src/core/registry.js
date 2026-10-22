@@ -31,7 +31,7 @@
 //   onKey(key)       any other key (lower-cased); return true if handled.
 //   onClick(x, y)    a click on the stage, canvas px; true if handled.
 //   locksSwipe()     true while a gesture of yours looks like a swipe and
-//                    must not change the effect (e.g. Time Stone's twist).
+//                    must not change the effect (e.g. Spirit Bomb's throw).
 
 const KINDS = ["frame", "overlay"];
 const HOOKS = ["draw", "hands", "face", "demo", "render", "enter", "reset", "trigger",

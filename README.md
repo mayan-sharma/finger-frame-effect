@@ -9,7 +9,7 @@ draw a portal in the air, talk in comic bubbles.
 **[Try it live](https://mayan-sharma.github.io/finger-frame-effect/)**. It
 needs a webcam; add `?demo` to try it without one.
 
-- **24 effects**: 8 inside the frame, 16 driven by hand poses or your face,
+- **22 effects**: 8 inside the frame, 14 driven by hand poses or your face,
   with synthesized sound.
 - **No build step, no install.** Plain ES modules and MediaPipe from a CDN.
 - **Adding an effect is one file.** See [Writing an effect](docs/EFFECTS.md).
@@ -81,9 +81,7 @@ conventions. [CONTRIBUTING.md](CONTRIBUTING.md) covers the rest.
 | o | Speech Bubbles (no frame): talk, and your words appear in a comic bubble beside your head |
 | p | Polaroid: the frame is a camera; squeeze it to take a shot, which prints, develops and lands in a pile |
 | a | Spirit Bomb (no frame): raise both open hands to gather light, throw them down |
-| d | Time Stone (no frame): an open palm stops time; twist it like a dial to rewind |
-| g | ASCII Cam: the frame turns to text; press again to cycle palettes (Color / Terminal / Amber / Mono) |
-| h | Rubber Arm (no frame): make a fist and punch; your arm stretches like rubber and snaps back |
+| d | ASCII Cam: the frame turns to text; press again to cycle palettes (Color / Terminal / Amber / Mono) |
 
 ← / → or clicking the canvas cycle effects. ↑ / ↓, or pressing the current
 effect's key again, step its variant (Portal's world, Matrix front/behind,
@@ -230,7 +228,7 @@ away. Swing your head and the stream whips around behind it.
 
 ### The gesture gags
 
-Fourteen more frame-less effects, each a pose that arms it plus a motion
+Twelve more frame-less effects, each a pose that arms it plus a motion
 that fires it. Every hand threshold is in palm lengths (wrist to middle knuckle),
 read off the tracker's metric 3D landmarks, so they hold at any distance.
 `f` fires the current gag by hand; `?demo&fx=<id>` (say `?demo&fx=claws`)
@@ -250,8 +248,6 @@ runs each one on stand-ins.
 | i | **Strange Portal** | ☝️ index up, ring + pinky curled | Trace a circle in the air | Sparks follow your fingertip; close the loop and a ring of molten sparks spins open at that size and place, throwing sparks off its rim and lighting the room orange. Inside is another world: first the Mirror Dimension (the room folded into a turning kaleidoscope), then Space, Synthwave and Sunset. A vertical slide changes the world. Draw a circle over it to close it; draw one elsewhere and it moves there. A loop counts once it sweeps 315° round its own centre and stays round, so a wave or zigzag doesn't open one. |
 | o | **Speech Bubbles** | Just talk (allow the microphone) | Each pause ends a bubble | Live speech recognition fills a comic bubble beside your head, with its tail on your mouth, as you speak. It sits on whichever side has more room. The next words start a new bubble and the old ones stack up and float away. Talk with your mouth wide open and it's a shout: a jagged yellow burst in red capitals. With no recogniser, no mic or no network, a moving mouth still gets a bubble of animated dots. Uses Chrome's Web Speech API, which sends the audio to Google's speech service. |
 | a | **Spirit Bomb** | Both open hands raised high | Throw them down, or shove at the camera | The light drains out of the room into a sphere gathering above your hands, in streams from every corner, until the screen is dark but for it. Throw it and it comes crashing toward you in a blinding impact as the light floods back. Lower your hands slowly instead and it fizzles. |
-| d | **Time Stone** | ✋ An open palm | Twist it like a dial | The green mandala comes up and time stops. Counter-clockwise rewinds the room, clockwise runs it forward again, and holding still holds the moment. You stay in the present (person mask) while the world behind you plays backwards. Drop the hand and time races forward to catch up. |
-| h | **Rubber Arm** | ✊ A fist (either hand) | Punch fast, or at the camera | ゴムゴムの… your fist shoots out on an arm that stretches like rubber, thinning as it goes, and lands with a thud and a PISTOL!, then snaps back with a wobble. The flying fist is your own, cut live out of the camera. Punch at the camera and it flies at you (BAZOOKA!). Alternate hands fast for a GATLING! |
 
 - **Snap** needs the person mask, and you can only disappear if something
   is behind you. The background is learned from every pixel you are not

@@ -6,3 +6,9 @@ __pycache__/
 *.pyc
 .venv/
 terminal/models/
+
+# Your own sound files (see sounds/README.md). The manifest is committed.
+sounds/*.mp3
+sounds/*.wav
+sounds/*.ogg
+sounds/*.m4a

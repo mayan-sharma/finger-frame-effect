@@ -48,7 +48,7 @@ export function drawMaskSpace(g, src, blurPx, k = 1) {
 }
 
 // You, cut out of the feed, in front of the void, with an aura (blue by
-// default; Time Stone uses green).
+// default; pass another colour for another mood).
 export function drawVoidPerson(color = "#7fc0ff") {
   if (!maskAvailable()) return;
   const W = canvas.width, H = canvas.height, u = unit();
