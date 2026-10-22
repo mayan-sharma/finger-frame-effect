@@ -90,10 +90,15 @@
   <div id="badge">demo mode</div>
   <div id="knobs" class="hidden"></div>
   <div id="hint"></div>
-  <!-- Cache-bust on every load: without this the browser keeps serving a
-       stale main.js after an edit, which silently hides new effects. -->
-  <script type="module">
-    import("./main.js?v=" + Date.now());
+  <script>
+    // A broken effect (a typo, a bad defineEffect) shows up on the page, not
+    // only in the console.
+    addEventListener("error", (e) => {
+      const el = document.getElementById("status");
+      el.textContent = `⚠️ ${e.message} — details in the console`;
+      el.classList.remove("hidden");
+    });
   </script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
