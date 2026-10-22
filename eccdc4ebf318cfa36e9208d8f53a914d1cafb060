@@ -1,0 +1,23 @@
+main.js
+  63981c58b3e234bd 3268-3269,3278-3296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "eccdc4ebf318cfa36e9208d8f53a914d1cafb060",
+  "prompts": {
+    "63981c58b3e234bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "603bb118-517b-4f2f-8411-df166a34eb4f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "mayan.sharma@1mg.com",
+      "messages": [],
+      "total_additions": 21,
+      "total_deletions": 1,
+      "accepted_lines": 21,
+      "overriden_lines": 0
+    }
+  }
+}
