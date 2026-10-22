@@ -1,2 +1,8 @@
 .DS_Store
 node_modules/
+
+# Terminal edition: Python caches, virtualenvs, and models it downloads.
+__pycache__/
+*.pyc
+.venv/
+terminal/models/
