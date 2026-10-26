@@ -3,14 +3,17 @@
 // hand and face tracking (fake-vision.js), each with its `f` trigger fired
 // part way through. Any exception or console error fails the run.
 //
-//   npm test                    everything
+//   npm test                    build, then everything
 //   npm test -- portal snap     only these effect ids (or ?try= file names)
+//   node test/smoke.mjs         skip the build (run `npm run build` first)
 //
-// Needs Google Chrome. Set CHROME_PATH if it is somewhere unusual.
+// It runs the production build with `catalyst serve`, on the port in
+// config/config.json, so stop `npm start` first. Needs Google Chrome. Set
+// CHROME_PATH if it is somewhere unusual.
 
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import puppeteer from "puppeteer-core";
-import { serve } from "../scripts/serve.mjs";
 
 const read = (p) => readFile(new URL(p, import.meta.url), "utf8");
 const shim = await read("./shim.js");
@@ -18,8 +21,10 @@ const fakeVision = await read("./fake-vision.js");
 const only = process.argv.slice(2);
 const TEMPLATES = ["_template-frame", "_template-overlay"];
 
-const server = await serve(0);
-const base = `http://127.0.0.1:${server.address().port}/`;
+const config = JSON.parse(await read("../config/config.json"));
+const base = `http://${config.NODE_SERVER_HOSTNAME}:${config.NODE_SERVER_PORT}/`;
+const server = await startServer();
+process.on("exit", () => stopServer(server));
 const browser = await puppeteer.launch({
   ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: "chrome" }),
   headless: true,
@@ -73,6 +78,30 @@ async function runOn(page, query, frames, expect) {
   return [...new Set(problems)];
 }
 
+// `catalyst serve` in its own process group, so stopping it also stops the
+// server process it spawns. Resolves once the page answers.
+async function startServer() {
+  // Otherwise the test could quietly run against whatever already answers.
+  const busy = await fetch(base).then(() => true, () => false);
+  if (busy) throw new Error(`${base} is already in use: stop \`npm start\` (or whatever runs there) first`);
+  const child = spawn("npx", ["catalyst", "serve"], { detached: true, stdio: ["ignore", "ignore", "inherit"] });
+  let exited = false;
+  child.once("exit", () => { exited = true; });
+  for (let i = 0; i < 300; i++) {
+    if (exited) throw new Error("catalyst serve exited; see the message above");
+    try {
+      if ((await fetch(base)).ok) return child;
+    } catch { /* not listening yet */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  stopServer(child);
+  throw new Error(`catalyst serve did not answer on ${base} within 30 s`);
+}
+
+function stopServer(child) {
+  try { process.kill(-child.pid); } catch { /* already gone */ }
+}
+
 const ids = await (async () => {
   const page = await browser.newPage();
   await page.goto(base + "?demo");
@@ -117,6 +146,6 @@ await Promise.all(Array.from({ length: process.env.CI ? 2 : 4 }, async () => {
   }
 }));
 await browser.close();
-server.close();
+stopServer(server);
 console.log(failed ? `\n${failed} of ${todo.length} runs failed` : `\nAll ${todo.length} runs passed`);
 process.exit(failed ? 1 : 0);

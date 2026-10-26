@@ -91,7 +91,7 @@ function loadVision() {
   if (!visionLoading) {
     visionLoading = (async () => {
       const base = (await pickCdn(VISION_PATH + "vision_bundle.mjs")) + VISION_PATH;
-      const mod = await import(base + "vision_bundle.mjs");
+      const mod = await import(/* @vite-ignore */ base + "vision_bundle.mjs");
       const fileset = await mod.FilesetResolver.forVisionTasks(base + "wasm");
       visionLib = { mod, fileset };
       return visionLib;

@@ -12,3 +12,6 @@ sounds/*.mp3
 sounds/*.wav
 sounds/*.ogg
 sounds/*.m4a
+
+# Catalyst build output.
+build/
