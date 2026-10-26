@@ -7,29 +7,33 @@ hands and face instead: charge a Kamehameha, snap half of yourself to dust,
 draw a portal in the air, talk in comic bubbles.
 
 **[Try it live](https://mayan-sharma.github.io/finger-frame-effect/)**. It
-needs a webcam; add `?demo` to try it without one.
+needs a webcam; add `?demo` to try it without one. The live page is the last
+static build from before the app moved to Catalyst, so run it locally for the
+current version.
 
 - **22 effects**: 8 inside the frame, 14 driven by hand poses or your face,
   with synthesized sound.
-- **No build step, no install.** Plain ES modules and MediaPipe from a CDN.
+- **A [Catalyst](https://catalyst.1mg.com) app.** Clone, `npm install`,
+  `npm start`. The effects are plain ES modules, and MediaPipe loads from a CDN.
 - **Adding an effect is one file.** See [Writing an effect](docs/EFFECTS.md).
 
 Inspired by [sophiamyang/finger-frame-effect](https://github.com/sophiamyang/finger-frame-effect).
 
 ## Run it locally
 
-The camera only works on `localhost` or HTTPS, and ES modules need a server,
-so serve the folder:
+You need Node 22.12 or newer. The camera only works on `localhost` or HTTPS,
+and the dev server runs on `localhost`:
 
 ```sh
-npm start                      # Node 18+; or: python3 -m http.server 8123
-# open http://localhost:8123
+npm install
+npm start                      # http://localhost:3005
 ```
 
-`npm start` turns caching off. With Python's server, hard-reload after
-editing a file, or the browser may keep running the old module.
+Edit a file and reload to see the change. For a production build, run
+`npm run build` and then `npm run serve`. The port and host are in
+`config/config.json`.
 
-No camera handy? `http://localhost:8123/?demo` paints a synthetic scene with
+No camera handy? `http://localhost:3005/?demo` paints a synthetic scene with
 stand-in hands and faces, and every effect works on it.
 
 URL options (they combine):
@@ -48,7 +52,7 @@ URL options (they combine):
 ```sh
 cp src/effects/_template-frame.js src/effects/my-effect.js    # or _template-overlay.js
 npm start
-# open http://localhost:8123/?try=my-effect&demo, then edit and reload
+# open http://localhost:3005/?try=my-effect&demo, then edit and reload
 ```
 
 Change the `id` and `name`, make it yours, then add one line to
@@ -325,7 +329,11 @@ connection for the WASM + models (demo mode works offline once cached).
 ## Project layout
 
 ```
-index.html            the page
+src/js/               the Catalyst page that renders the stage and starts the app
+src/static/css/       the page's styles
+server/, client/      Catalyst's server and browser entry points
+config/config.json    host, port and build settings
+sounds/               your own recordings (see sounds/README.md), served at /sounds
 src/main.js           boot: URL options, camera, trackers, the loop
 src/api.js            everything an effect may import, documented
 src/effects/          one file per effect, plus index.js (the list) and templates

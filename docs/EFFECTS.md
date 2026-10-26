@@ -3,7 +3,8 @@
 An effect is one JavaScript file in `src/effects/`. It imports what it needs
 from `src/api.js`, and its default export is `defineEffect({...})`. Listing
 it in `src/effects/index.js` gives it a chip, a keyboard key, a place in the
-swipe order, and a smoke test. No build step, no framework.
+swipe order, and a smoke test. Effects are plain modules: they never touch
+React or Catalyst, which only run the page around them.
 
 Every built-in effect follows exactly this pattern and imports only from
 `api.js`, so any of them is a working example to learn from.
@@ -11,18 +12,18 @@ Every built-in effect follows exactly this pattern and imports only from
 ## Quickstart
 
 ```sh
-npm install           # once: the test runner (the app has no dependencies)
-npm start             # http://localhost:8123
+npm install           # once
+npm start             # http://localhost:3005
 ```
 
 1. Copy a template and give it your own `id` and `name`:
    - `src/effects/_template-frame.js`: draws inside the finger frame (Night Vision).
    - `src/effects/_template-overlay.js`: driven by a hand pose, no frame (Fireflies).
-2. Open `http://localhost:8123/?try=<your-file>&demo`. `?try` loads a file
+2. Open `http://localhost:3005/?try=<your-file>&demo`. `?try` loads a file
    that isn't in `index.js` yet and starts on it. `&demo` paints a synthetic
    scene, so you don't need a camera. Drop `&demo` to use your hands.
-3. Edit, then reload. The dev server turns caching off, so the change shows
-   up straight away. Errors show in the status pill at the top, and in full
+3. Edit, then reload. A new file is picked up without restarting
+   `npm start`. Errors show in the status pill at the top, and in full
    in the console.
 4. Add an import and an entry to `src/effects/index.js`.
 5. Run `npm test`. It runs every listed effect in headless Chrome, both in

@@ -1,7 +1,7 @@
 // TEMPLATE — an overlay effect: no frame, a hand pose drives it instead.
 //
 //   1. Copy this file to src/effects/<your-id>.js and change `id` and `name`.
-//   2. Open http://localhost:8000/?try=<your-id>&demo to see it (no camera
+//   2. Open http://localhost:3005/?try=<your-id>&demo to see it (no camera
 //      needed), or drop `&demo` to try it with your hands.
 //   3. When it looks right, add it to src/effects/index.js.
 //

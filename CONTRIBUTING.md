@@ -12,22 +12,24 @@ through writing one. Other good contributions:
 
 ## Setup
 
-You need Node 18+ and Google Chrome (for the tests).
+You need Node 22.12+ and Google Chrome (for the tests).
 
 ```sh
-npm install      # the test runner; the app itself has no dependencies
-npm start        # http://localhost:8123 (add ?demo if you have no camera)
-npm test         # every effect, headless
+npm install      # Catalyst, React and the test runner
+npm start        # http://localhost:3005 (add ?demo if you have no camera)
+npm test         # a production build, then every effect, headless
 ```
 
-There is no build step. Edit a file and reload: the dev server turns caching
-off.
+Edit a file and reload to see the change. `npm test` serves the production
+build on the same port as `npm start`, so stop the dev server before running
+it.
 
 ## Where things live
 
 | Path | What |
 | ---- | ---- |
 | `src/effects/` | One file per effect, plus `index.js` (the list) and two `_template-*.js` files |
+| `src/js/`, `server/`, `client/`, `config/` | The Catalyst app around the effects: one page that renders the stage and starts `src/main.js` in the browser |
 | `src/api.js` | Everything an effect may import, with a comment on every group |
 | `src/core/` | The app shell: the effect registry, the frame loop, the finger frame and its dials, the trackers, keys and swipes |
 | `src/lib/` | Helpers shared by effects: hands, face, person mask, particles, scenes, demo stand-ins |
@@ -40,8 +42,8 @@ off.
   need to touch anything else, say why in the PR.
 - **Effects import only from `src/api.js`.** If an effect needs something
   that isn't exported, add it to `api.js` with a comment, in the same PR.
-- **No new runtime dependencies.** MediaPipe from a CDN is the only one, and
-  the app stays a folder you can serve as-is.
+- **No new runtime dependencies.** Catalyst and React run the page, and
+  MediaPipe loads from a CDN. Effects need nothing else.
 - **Keep it fast.** Everything shares one 16 ms frame. Don't allocate
   canvases or big arrays per frame; make them once with `makeScratch()`.
 - **`npm test` must pass.** CI runs it on every pull request.
@@ -50,8 +52,9 @@ off.
 
 Match the code around you:
 
-- Modern JavaScript, ES modules, no build. 2-space indent, double quotes,
-  semicolons.
+- Modern JavaScript, ES modules. 2-space indent, double quotes, semicolons.
+  The Catalyst files (`src/js/`, `server/`, `client/`) follow Catalyst's own
+  template style.
 - Constants in `UPPER_CASE` at the top of the file, each with a comment that
   says what it is in real units (seconds, palm lengths, metres).
 - Comments explain *why*: the threshold that was measured, the obvious
